@@ -1,0 +1,6 @@
+.venv/
+bin/deep-filter
+__pycache__/
+*.pyc
+.playwright-mcp/
+.*.log

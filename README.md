@@ -1,0 +1,134 @@
+# kaunbola
+
+*Kaun bola* is Hindi for "who said it".
+
+Self-hosted meeting transcription for conversations that switch between Hindi and English mid-sentence. Record on your phone or drop in a file, and your own GPU turns it into a transcript that says who said what, in the words they actually used: Hinglish written in Latin script, an English line under each turn, speakers named once and recognised in every later recording, plus a title, summary and action items. Nothing leaves your machines.
+
+I built it after noticing what transcription tools do with conversations that switch between Hindi and English: they either force the whole thing into English, write it in Devanagari, or send the audio to someone else's cloud. What I wanted was narrower than "AI meeting notes": capture who said what, verbatim, in the script people actually type in, and be able to ask questions about it later from Claude Code.
+
+A turn in the transcript looks like this:
+
+```
+[00:12:41] **Priya:** Haan toh basically hum log Monday ko dobara milenge, tab tak draft ready ho jayega.
+> Yes, so basically we will meet again on Monday; the draft will be ready by then.
+```
+
+## What it does
+
+- **Record or upload.** A phone-installable web app (PWA) on your Tailscale network: tap to record, share a file from any app, or upload several large files at once with progress. The note's date comes from the file, not the upload.
+- **Noise removal** for phone recordings in cafés and cars, with the attenuation capped so quiet, far-away speakers are not silenced.
+- **Speaker detection** with voice memory: name "Speaker 2" once and the same voice is named automatically in future recordings.
+- **Hinglish the way people type it**, with an English translation per turn and the raw recognition kept alongside.
+- **Title, summary and action items** generated from the content.
+- **Folders, a date view, and dedupe by content hash**: re-sending a file you already transcribed just opens it, whatever it is called.
+- **A Claude Code skill** so that "what did we decide about the draft last week?" is answered from the transcripts.
+- **One engine** behind the web app, the CLI and the bulk importer, so every path produces the same note.
+- **Runs as a service**: starts on boot, frees the GPU when idle, resumes interrupted jobs after a restart.
+
+## How a recording flows through
+
+1. **Convert and clean.** ffmpeg makes a mono WAV. DeepFilterNet3 removes background noise in two-minute chunks in parallel on the CPU, attenuation capped at 30 dB by default. On by default; it can be turned off in Settings, and per job, for clean recordings.
+2. **Who spoke when.** pyannote `speaker-diarization-community-1` runs on the GPU and returns exclusive speaker turns plus one voice embedding per speaker.
+3. **What was said.** Qwen3-ASR-1.7B transcribes three-minute windows cut at silence, so the model has conversational context, prompted with a romanised Hinglish sentence so English words stay in Latin script. Meta's MMS forced aligner (via torchaudio) then gives every word a timestamp; Devanagari words are romanised with uroman for alignment only. Each word goes to the speaker whose turn contains it, and runs of words become turns. `ASR_MODE=turns` is the simpler alternative: one clip per speaker turn.
+4. **Who is this.** Each speaker's embedding is compared (cosine) with the voices stored in `speakers.json`. Above the threshold the name is applied. Naming a speaker in the app stores that voice, keeping the last ten samples per person.
+5. **Rewrite and summarise.** A local LLM through Ollama, with structured JSON output, rewrites each turn as Latin-script Hinglish and translates it to English, fifteen turns per request. A second pass writes the title, summary and action items, reducing long transcripts chunk by chunk first. The raw recognition is kept in the note and shown under an "Original" tab.
+6. **Store.** `transcript.md` for humans and Claude, `transcript.json` for code, `meta.json` with the SHA-256 of the source file.
+
+Models load lazily, stay resident between jobs, and unload after ten minutes idle. If Ollama runs on the same GPU, the speech models are unloaded before the LLM pass and reloaded on the next job; if it runs on another machine (below), nothing is ever evicted.
+
+### Why these models
+
+| Step | Choice | What I tested |
+| --- | --- | --- |
+| Speech recognition | Qwen3-ASR-1.7B | faster-whisper large-v3 on the same Hinglish phone clip misdetected the language as Malay and translated instead of transcribing. Kept as `ASR_BACKEND=whisper` for English-only use. |
+| Diarization | pyannote community-1 | The best open diarizer, and its output includes the embeddings the voice memory needs. Gated on Hugging Face (free, CC-BY-4.0). |
+| Word timing | torchaudio MMS forced aligner | Qwen's own aligner has no Hindi. Window mode with alignment matched per-turn mode on a three-minute clip and keeps context on hour-long meetings. |
+| Noise removal | DeepFilterNet3 static binary | No Python dependencies, fast on CPU. Full-strength suppression removed quiet speakers, hence the cap. |
+| Hinglish and summaries | Ollama, `qwen3.5:9b` by default | `qwen3.6:35b-a3b` on a second machine ran at the same speed and was slightly more verbatim (it kept a syllable the 9B dropped). Bigger models improve summaries, not the words or the speakers. |
+
+## Setup
+
+Tested on Ubuntu with one RTX A2000 (12 GB), Python 3.12, ffmpeg, and Ollama already installed. A 30-minute recording takes about nine minutes end to end on that card.
+
+```bash
+git clone https://github.com/Abhyuday98/kaunbola
+cd kaunbola
+bash scripts/setup.sh        # venv, pinned requirements, DeepFilterNet binary, config template, user service
+```
+
+Then:
+
+1. Accept the model terms at [huggingface.co/pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), create a read token, and paste it into `~/.config/audio-notes/env`. Without it you still get a transcript, with one speaker.
+2. `ollama pull qwen3.5:9b` (or set `LLM_MODEL` to what you have).
+3. `systemctl --user restart audio-notes`, then `loginctl enable-linger $USER` so it starts on boot.
+4. To reach it from your phone, serve it over Tailscale; the browser microphone needs HTTPS:
+
+```bash
+tailscale serve --bg --https=8446 http://127.0.0.1:8470
+```
+
+Open the address Tailscale gives you on the phone and add it to the home screen. The installed app gets a "Start recording" shortcut on long-press and appears in the share sheet, so a recording made with the phone's own voice recorder can be sent straight to it. For long meetings use the native recorder and share: a browser tab does not survive the screen locking or a phone call.
+
+### A second machine for the LLM
+
+If you have another box on the tailnet, the LLM pass can live there so the transcription GPU is never shared and the model stays loaded:
+
+```bash
+# on the second machine
+bash scripts/setup-ollama-remote.sh <its-tailscale-ip> qwen3.6:35b-a3b
+# on the transcription machine, in ~/.config/audio-notes/env
+OLLAMA_URL=http://<its-tailscale-ip>:11434
+LLM_MODEL=qwen3.6:35b-a3b
+```
+
+The script binds Ollama to that one address only. A 35B mixture-of-experts model with 3B active parameters runs usefully on a 12 GB card with the rest in RAM; a dense model of that size would not.
+
+## Using it
+
+**Web app.** Record, upload, open a note: summary and action items at the top, then the transcript with Hinglish / English / Original tabs, tap a turn to seek the audio, tap a speaker to name them. The "⋯" menu renames, moves to a folder, copies markdown, re-transcribes or deletes. Settings has the voice-match threshold, the denoise toggle, and the list of known voices.
+
+**CLI** (standard library only, talks to the running service):
+
+```bash
+.venv/bin/python cli.py transcribe meeting.m4a [title] [--folder F]   # waits and prints the markdown; a known file just prints it
+.venv/bin/python cli.py import ~/recordings [--min-seconds 60]       # queue a whole tree; folder = first sub-directory
+.venv/bin/python cli.py list | search <words> | show <id> | speakers
+```
+
+**Claude Code.** Copy `skill/` to `~/.claude/skills/kaunbola/` and set the path at the top of it. Claude then transcribes files and answers questions about past meetings through the CLI, never touching the GPU itself.
+
+**Speaker maintenance** (`notes_tool.py`):
+
+- `from-vtt <note_id> <file.vtt> --apply`: if a recording comes with a WebVTT subtitle file that carries speaker names (most video-call platforms produce one for a call), this maps the detected speakers to those names by speaking-time overlap and stores their voices. The best way to seed the voice memory. It does not help when several people share one device, since the platform then credits everything to that one account.
+- `rematch --apply [--reset=Name1,Name2]`: relabel unnamed speakers across all notes from the current known voices, optionally reconsidering some names. Manual names are never overwritten.
+- `repair --apply`: strip hallucinated echoes of the prompt sentence from old transcripts.
+
+Deleting a known voice also untags that name in every note, so the labels can be redone.
+
+## Where it is honest about its limits
+
+- **Speaker attribution is the weakest link**, as in every tool of this kind. The diarizer over-splits: one person can come back as two speakers in a long call, and short interjections ("okay", "correct") land in a mixed cluster. Naming a voice in three or four recordings makes matching robust; telling the diarizer how many people were in the room would help more and is not wired up yet.
+- **The Hinglish line is a rewrite.** The LLM re-scripts and translates; it does not hear anything. A small model occasionally tidies a filler word. The raw recognition is always kept.
+- **Qwen echoes its prompt** on silent stretches, producing the context sentence as if someone said it. These are stripped wherever they appear, and `repair` cleans older notes.
+- **No login.** Access control is the tailnet. Do not expose it further without putting something in front.
+- **One worker, one GPU.** Jobs queue. Fine for one person, not for a team.
+- **Tested on one machine and one language pair.** Qwen3-ASR covers 52 languages, but the prompt, context sentence and LLM instructions are written for Hindi and English.
+
+## Future work
+
+Things I would do next, roughly in the order they would help:
+
+- **Speaker-count hint** at upload or record time, passed to the diarizer. The cheapest attribution gain available.
+- **Verbatim guard**: when a turn's Hinglish drifts too far in length from the raw recognition, keep the raw words and flag the turn.
+- **A/B the Hinglish fine-tune of Qwen3-ASR** ([Srota](https://discuss.huggingface.co/t/open-source-hinglish-asr-fine-tuned-from-qwen3-asr-0-6b-15-85-wer-on-conversational-test/176416), 0.6B) against the 1.7B base on real phone clips. The only open lever on word accuracy.
+- **Local LLM fallback** when the remote Ollama is unreachable, so the note still gets its Hinglish lines.
+- **Subtitle auto-import**: drop a `.vtt` next to the recording and have names seeded without a command.
+- **Second worker** on a second GPU for bulk imports.
+- **Semantic search** over the notes (an embedding model is already one `ollama pull` away) instead of grep.
+- **Live transcription** while recording, for the cases where reading along matters more than accuracy.
+- **Auth** in front of the app, so it can live beyond a tailnet.
+
+## Licences
+
+Code is MIT. The models have their own terms: pyannote community-1 is CC-BY-4.0 and gated; Qwen3-ASR is Apache-2.0; DeepFilterNet is MIT/Apache-2.0; the MMS forced aligner weights are CC-BY-NC-4.0, which matters if you use this commercially.
+
