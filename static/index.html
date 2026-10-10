@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>Kaunbola</title>
+<style>
+:root{
+  --bg:#f2f2f7; --card:#fff; --label:#000; --secondary:rgba(60,60,67,.6); --tertiary:rgba(60,60,67,.3);
+  --separator:rgba(60,60,67,.29); --fill:rgba(120,120,128,.12); --tint:#007aff; --red:#ff3b30; --green:#34c759; --orange:#ff9500; --dim:rgba(0,0,0,.4);
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#000; --card:#1c1c1e; --label:#fff; --secondary:rgba(235,235,245,.6); --tertiary:rgba(235,235,245,.3);
+  --separator:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24); --tint:#0a84ff; --red:#ff453a; --green:#30d158; --orange:#ff9f0a; --dim:rgba(0,0,0,.6);
+}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--label);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.35;-webkit-text-size-adjust:100%}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+main{max-width:720px;margin:0 auto;padding:12px 16px 120px}
+h1{font-size:34px;font-weight:700;letter-spacing:.37px;margin:20px 0 12px}
+h2{font-size:13px;font-weight:400;color:var(--secondary);text-transform:uppercase;letter-spacing:-.08px;margin:24px 16px 8px}
+h3{font-size:17px;font-weight:600;margin:0 0 6px}
+a{color:var(--tint)}
+button{font:inherit;color:var(--tint);background:none;border:0;padding:0;min-height:44px;min-width:44px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:active{opacity:.4}
+a.btn,a.back{text-decoration:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 20px;border-radius:12px;font-weight:600;font-size:17px;background:var(--fill)}
+.btn.prominent{background:var(--tint);color:#fff}
+.btn.destructive{color:var(--red)}
+.btn.record{background:var(--red);color:#fff;border-radius:999px;padding:0 24px}
+.btn[disabled]{opacity:.4}
+.nav{display:flex;align-items:center;justify-content:space-between;min-height:44px;gap:8px}
+.nav .back{display:inline-flex;align-items:center;gap:2px;font-size:17px;margin-left:-8px}
+.group{background:var(--card);border-radius:12px;overflow:hidden;margin:0 0 8px}
+.row{display:flex;align-items:center;gap:12px;padding:11px 16px;min-height:44px;position:relative;text-decoration:none;color:inherit;width:100%;text-align:left}
+.row+.row::before{content:"";position:absolute;left:16px;right:0;top:0;border-top:.5px solid var(--separator)}
+.row .main{flex:1;min-width:0}
+.row .title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .sub{font-size:15px;color:var(--secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .chev{color:var(--tertiary);flex:none}
+.row input[type=number],.row select{font:inherit;color:var(--label);background:none;border:0;text-align:right;flex:1;min-width:0;max-width:60%;outline:none}
+.row select{text-align-last:right}
+.search{display:flex;align-items:center;gap:6px;background:var(--fill);border-radius:10px;padding:0 10px;height:36px;margin-bottom:12px;color:var(--secondary)}
+.search input{flex:1;font:inherit;font-size:17px;background:none;border:0;outline:none;color:var(--label);min-width:0}
+.pill{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--fill);color:var(--secondary);white-space:nowrap}
+.pill.busy{color:var(--orange)}.pill.error{color:var(--red)}
+.banner{background:var(--card);border-left:4px solid var(--orange);border-radius:12px;padding:12px 16px;font-size:15px;margin-bottom:12px;color:var(--secondary)}
+.banner.err{border-color:var(--red)}
+.card{background:var(--card);border-radius:12px;padding:14px 16px;margin-bottom:12px;font-size:16px}
+.card ul{margin:0;padding-left:20px}.card li{margin:4px 0}
+.card p{margin:0 0 8px}.card p:last-child{margin:0}
+.bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;gap:12px;justify-content:center;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:.5px solid var(--separator)}
+.seg{display:flex;background:var(--fill);border-radius:9px;padding:2px;margin:12px 0}
+.seg button{flex:1;min-height:32px;border-radius:7px;font-size:13px;font-weight:500;color:var(--label)}
+.seg button.on{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.turn{padding:10px 16px;cursor:pointer}
+.turn+.turn{border-top:.5px solid var(--separator)}
+.turn.playing{background:var(--fill)}
+.turn .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--secondary);margin-bottom:2px}
+.turn .who b{color:var(--tint);font-weight:600;min-height:auto;min-width:auto}
+.turn .en{color:var(--secondary);font-size:15px;margin-top:4px}
+.meta{color:var(--secondary);font-size:15px;margin:0 0 12px}
+audio{width:100%;margin:8px 0 4px}
+.sheet{background:var(--card);border-radius:16px;padding:20px 16px;text-align:center}
+.timer{font-size:44px;font-weight:300;font-variant-numeric:tabular-nums;margin:12px 0}
+.level{height:6px;background:var(--fill);border-radius:3px;overflow:hidden;margin:0 0 20px}
+.level i{display:block;height:100%;background:var(--green);width:0;transition:width .1s}
+.titleinput{font:inherit;font-size:20px;font-weight:600;background:none;border:0;border-bottom:1px solid var(--separator);width:100%;color:var(--label);outline:none;padding:8px 0;text-align:center}
+.empty{text-align:center;color:var(--secondary);padding:48px 16px}
+progress{width:100%;height:6px;accent-color:var(--tint)}
+.toggle{appearance:none;width:51px;height:31px;border-radius:16px;background:var(--fill);position:relative;flex:none;cursor:pointer;margin:0}
+.toggle:checked{background:var(--green)}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2);transition:left .15s}
+.toggle:checked::after{left:22px}
+/* dialogs: iOS-style alert and action sheet */
+dialog{border:0;padding:0;background:transparent;color:var(--label);max-width:none;max-height:none}
+dialog::backdrop{background:var(--dim);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.alert{width:270px;background:var(--card);border-radius:14px;overflow:hidden;text-align:center;font-size:13px}
+.alert .body{padding:19px 16px 16px}
+.alert h3{font-size:17px;margin:0 0 4px}
+.alert p{margin:0;color:var(--secondary)}
+.alert input{width:100%;margin-top:12px;font:inherit;font-size:15px;padding:8px 10px;border:.5px solid var(--separator);border-radius:8px;background:var(--bg);color:var(--label);outline:none}
+.alert .btns{display:flex;border-top:.5px solid var(--separator)}
+.alert .btns button{flex:1;font-size:17px;min-height:44px;border-left:.5px solid var(--separator)}
+.alert .btns button:first-child{border-left:0}
+.alert .btns.col{flex-direction:column}.alert .btns.col button{border-left:0;border-top:.5px solid var(--separator)}.alert .btns.col button:first-child{border-top:0}
+.alert .btns button.destructive{color:var(--red)}.alert .btns button.bold{font-weight:600}
+.asheet{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto}
+.asheet .group{margin-bottom:8px}
+.asheet button{width:100%;font-size:20px;min-height:57px;background:var(--card);border-top:.5px solid var(--separator)}
+.asheet .group button:first-child{border-top:0}
+.asheet button.destructive{color:var(--red)}.asheet button.cancel{font-weight:600;border-radius:12px}
+.asheet .head{font-size:13px;color:var(--secondary);text-align:center;padding:12px 16px;background:var(--card)}
+.toast{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:var(--card);color:var(--label);padding:10px 18px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.2);font-size:15px;z-index:9;max-width:90vw}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<input type="file" id="file" multiple accept="audio/*,video/*,.m4a,.mp3,.wav,.ogg,.opus,.webm,.mp4" class="sr" aria-hidden="true">
+<dialog id="dlg"></dialog>
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+const app = $('#app');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ts = s => { s = Math.floor(s||0); return (s>=3600 ? Math.floor(s/3600)+':' : '') + String(Math.floor(s%3600/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); };
+const dur = s => s==null ? '' : (s>=3600 ? Math.round(s/60)+' min' : Math.max(1,Math.round(s/60))+' min');
+const fmtDate = iso => iso ? new Date(iso).toLocaleString([], {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}) : '';
+const dayLabel = iso => { const d = new Date(iso), t = new Date(); const diff = Math.round((new Date(t.getFullYear(),t.getMonth(),t.getDate()) - new Date(d.getFullYear(),d.getMonth(),d.getDate())) / 864e5);
+  return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString([], {weekday:'short', day:'numeric', month:'short', year: d.getFullYear() === t.getFullYear() ? undefined : 'numeric'}); };
+const api = async (path, opt={}) => { const r = await fetch('/api'+path, opt); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+const json = (method, body) => ({method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+const spkName = (note, k) => note.speakers?.[k] || (k.startsWith('SPEAKER_') ? 'Speaker ' + (parseInt(k.split('_').pop()) + 1) : k);
+const STATES = {uploading:'Uploading', queued:'Queued', recording:'Recording', convert:'Converting', denoise:'Removing noise', diarize:'Finding speakers', transcribe:'Transcribing', translate:'Hinglish + English', summarize:'Summary + title', done:'', error:'Failed'};
+const STEPS = ['denoise', 'diarize', 'transcribe', 'translate', 'summarize'];
+const elapsed = s => { s = Math.floor(s); return s >= 60 ? Math.floor(s / 60) + 'm ' + (s % 60) + 's' : s + 's'; };
+const progress = st => {
+  const cur = st.state === 'convert' ? 0 : STEPS.indexOf(st.state);
+  if (cur < 0) return `<div class="banner">${STATES[st.state] || st.state}…</div>`;
+  const rows = STEPS.map((k, i) => `<div style="display:flex;gap:10px;align-items:center;${i > cur ? 'opacity:.45' : ''}"><span style="width:18px;text-align:center">${i < cur ? '✓' : i === cur ? '●' : '○'}</span><span>${STATES[k]}${i === cur && st.detail ? ' · ' + esc(st.detail) : ''}</span></div>`).join('');
+  return `<div class="banner" aria-live="polite"><div style="font-weight:600;color:var(--label);margin-bottom:6px">Step ${cur + 1} of ${STEPS.length}${st.started ? ' · ' + elapsed(Date.now() / 1000 - st.started) + ' elapsed' : ''}</div>${rows}</div>`;
+};
+const md = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split(/\n/).map(l => l.trim()).filter(Boolean).map(l => /^[-*•] /.test(l) ? `<li>${l.slice(2)}</li>` : `<p>${l}</p>`).join('').replace(/(<li>.*?<\/li>)+/g, m => `<ul>${m}</ul>`);
+const chev = '<svg class="chev" width="8" height="14" viewBox="0 0 8 14" aria-hidden="true"><path d="M1 1l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const back = (to, label) => `<a class="back" href="#${to}" aria-label="Back to ${label}"><svg width="12" height="20" viewBox="0 0 12 20" aria-hidden="true"><path d="M10 1L2 10l8 9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>${label}</a>`;
+let pollTimer = null;
+const route = () => (location.hash.slice(1) || '/').split('/').filter(Boolean);
+
+// ---------- dialogs (replace prompt/confirm/alert) ----------
+const dlg = $('#dlg');
+function modal(html, wire) {
+  return new Promise(res => {
+    dlg.innerHTML = html; dlg.className = '';
+    const done = v => { dlg.close(); dlg.innerHTML = ''; res(v); };
+    dlg.oncancel = e => { e.preventDefault(); done(null); };
+    dlg.onclick = e => { if (e.target === dlg) done(null); };
+    wire(done);
+    dlg.showModal();
+    const inp = $('input', dlg); if (inp) { inp.focus(); inp.select(); }
+  });
+}
+const ui = {
+  alert: (title, msg='') => modal(`<div class="alert"><div class="body"><h3>${esc(title)}</h3>${msg ? `<p>${esc(msg)}</p>` : ''}</div><div class="btns"><button class="bold" data-v="1">OK</button></div></div>`,
+    done => $('[data-v]', dlg).onclick = () => done(true)),
+  confirm: (title, msg='', okLabel='OK', destructive=false) => modal(`<div class="alert"><div class="body"><h3>${esc(title)}</h3>${msg ? `<p>${esc(msg)}</p>` : ''}</div><div class="btns"><button data-v="0">Cancel</button><button class="${destructive ? 'destructive' : ''} bold" data-v="1">${esc(okLabel)}</button></div></div>`,
+    done => dlg.querySelectorAll('[data-v]').forEach(b => b.onclick = () => done(b.dataset.v === '1'))),
+  prompt: (title, value='', placeholder='', msg='') => modal(`<div class="alert"><div class="body"><h3>${esc(title)}</h3>${msg ? `<p>${esc(msg)}</p>` : ''}<input type="text" value="${esc(value)}" placeholder="${esc(placeholder)}" aria-label="${esc(title)}"></div><div class="btns"><button data-v="0">Cancel</button><button class="bold" data-v="1">OK</button></div></div>`,
+    done => { const i = $('input', dlg); i.onkeydown = e => { if (e.key === 'Enter') done(i.value); }; dlg.querySelectorAll('[data-v]').forEach(b => b.onclick = () => done(b.dataset.v === '1' ? i.value : null)); }),
+  sheet: (title, actions) => modal(`<div class="asheet"><div class="group">${title ? `<div class="head">${esc(title)}</div>` : ''}${actions.map((a, i) => `<button class="${a.destructive ? 'destructive' : ''}" data-i="${i}">${esc(a.label)}</button>`).join('')}</div><div class="group"><button class="cancel" data-i="-1">Cancel</button></div></div>`,
+    done => dlg.querySelectorAll('[data-i]').forEach(b => b.onclick = () => done(b.dataset.i < 0 ? null : actions[b.dataset.i].value ?? actions[b.dataset.i].label))),
+  toast: (msg, ms=2500) => { const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms); },
+};
+async function pickFolder(current='') {
+  const folders = Object.keys(await api('/folders')).filter(Boolean).sort();
+  const v = await ui.sheet('Move to folder', [...folders.map(f => ({label: f === current ? f + ' ✓' : f, value: f})), {label: 'New folder…', value: '\0new'}, {label: 'No folder', value: ''}]);
+  if (v === '\0new') return ui.prompt('New folder', '', 'Folder name');
+  return v;
+}
+
+// ---------- list ----------
+async function viewList() {
+  const q = state.q || '', view = state.view || localStorage.getItem('view') || 'date';
+  const notes = q ? await api('/search?q=' + encodeURIComponent(q)) : await api('/notes');
+  const busy = notes.some(n => !['done','error','recording'].includes(n.status?.state));
+  const settings = await api('/settings');
+  const row = n => `
+      <a class="row" href="#/note/${n.id}">
+        <div class="main"><div class="title">${esc(n.title)}</div>
+        <div class="sub">${esc(view === 'folder' || q ? fmtDate(n.created) : new Date(n.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))}${n.duration ? ' · ' + dur(n.duration) : ''}${view !== 'folder' && n.folder ? ' · ' + esc(n.folder) : ''}${n.speakers?.length ? ' · ' + esc(n.speakers.join(', ')) : ''}${n.snippet ? '<br>' + esc(n.snippet.replace(/\*\*/g,'').split('\n')[0]) : ''}</div></div>
+        ${n.status.state !== 'done' ? `<span class="pill ${n.status.state==='error'?'error':'busy'}">${STATES[n.status.state] || n.status.state}</span>` : ''}${chev}
+      </a>`;
+  let body;
+  if (!notes.length) body = `<div class="empty">${q ? 'No matches.' : 'No notes yet. Record a meeting or upload a file.'}</div>`;
+  else if (q) body = `<div class="group">${notes.map(row).join('')}</div>`;
+  else {
+    const groups = new Map();
+    for (const n of notes) { const k = view === 'folder' ? (n.folder || '\0') : dayLabel(n.created); (groups.get(k) || groups.set(k, []).get(k)).push(n); }
+    const keys = [...groups.keys()]; if (view === 'folder') keys.sort((a, b) => a === '\0' ? 1 : b === '\0' ? -1 : a.localeCompare(b));
+    body = keys.map(k => `<h2>${k === '\0' ? 'No folder' : esc(k)} <span style="text-transform:none;letter-spacing:0">· ${groups.get(k).length}</span></h2><div class="group">${groups.get(k).map(row).join('')}</div>`).join('');
+  }
+  app.innerHTML = `
+    <div class="nav"><h1>Notes</h1><a href="#/settings" class="btn" aria-label="Settings" style="min-width:44px;padding:0 10px"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" fill="none" stroke="currentColor" stroke-width="2"/></svg></a></div>
+    ${settings.diarization !== 'ok' ? `<div class="banner">Speaker detection is off: ${esc(settings.diarization)}. See <a href="#/settings">Settings</a>.</div>` : ''}
+    <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="Search transcripts" value="${esc(q)}" aria-label="Search transcripts"></label>
+    ${q ? '' : `<div class="seg" role="tablist" style="margin-top:0">${[['date','By date'],['folder','By folder']].map(([v,l]) => `<button role="tab" aria-selected="${v===view}" class="${v===view?'on':''}" data-view="${v}">${l}</button>`).join('')}</div>`}
+    ${body}
+    <div class="bar"><button class="btn" id="upload" aria-label="Upload a recording"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 20h16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Upload</button>
+    <a class="btn record" href="#/record" aria-label="Record a meeting"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 11a7 7 0 0014 0M12 18v4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>Record</a></div>`;
+  $('#q').oninput = e => { state.q = e.target.value; clearTimeout(state.qt); state.qt = setTimeout(viewList, 250); };
+  if (q) { const i = $('#q'); i.focus(); i.setSelectionRange(q.length, q.length); }
+  app.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { state.view = b.dataset.view; try { localStorage.setItem('view', state.view); } catch (e) {} viewList(); });
+  $('#upload').onclick = () => $('#file').click();
+  if (busy) pollTimer = setTimeout(() => render(true), 3000);
+}
+
+$('#file').onchange = async e => {
+  const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+  const label = files.length === 1 ? files[0].name : files.length + ' files';
+  const choice = await ui.sheet(`Upload ${label}`, [{label: 'Upload', value: '\0none'}, {label: 'Upload into a folder…', value: '\0pick'}]);
+  if (choice === null) return;
+  const into = choice === '\0pick' ? await pickFolder() : '';
+  if (into === null) return;
+  app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div><div class="sheet"><div class="meta">Uploading ${esc(label)}${into ? ' into ' + esc(into) : ''}</div>
+    ${files.map((f, i) => `<div style="text-align:left;margin:10px 0"><div class="sub" style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.name)}</div><progress id="p${i}" max="100" value="0"></progress><div class="meta" id="t${i}" style="margin:2px 0 0">Waiting</div></div>`).join('')}
+    <div class="meta">Titles, summaries and action items are generated from the content.</div></div>`;
+  const upload = (f, i) => new Promise(res => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/upload?filename=${encodeURIComponent(f.name)}&folder=${encodeURIComponent(into || '')}&created=${(f.lastModified || 0) / 1000}`);
+    xhr.upload.onprogress = ev => { if (ev.lengthComputable) { $('#p' + i).value = ev.loaded / ev.total * 100; $('#t' + i).textContent = Math.round(ev.loaded / ev.total * 100) + '%'; } };
+    xhr.onload = () => { const ok = xhr.status === 200, r = ok ? JSON.parse(xhr.response) : null; $('#p' + i).value = 100;
+      $('#t' + i).textContent = !ok ? 'Failed: ' + xhr.response.slice(0, 120) : r.duplicate ? 'Already transcribed' : 'Queued'; res(r); };
+    xhr.onerror = () => { $('#t' + i).textContent = 'Failed'; res(null); };
+    xhr.send(f);
+  });
+  const results = [];
+  for (let i = 0; i < files.length; i++) results.push(await upload(files[i], i));  // one at a time: big files, one disk
+  const ok = results.filter(Boolean);
+  if (files.length === 1 && ok.length) { if (ok[0].duplicate) ui.toast('Already transcribed — opening it'); location.hash = '#/note/' + ok[0].id; return; }
+  ui.toast(`${ok.filter(r => !r.duplicate).length} queued${ok.some(r => r.duplicate) ? ', ' + ok.filter(r => r.duplicate).length + ' already done' : ''}${ok.length < files.length ? ', ' + (files.length - ok.length) + ' failed' : ''}`);
+  location.hash = '#/';
+};
+
+// ---------- record ----------
+async function viewRecord() {
+  app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div>
+    <div class="sheet"><input class="titleinput" id="title" placeholder="Title (optional, generated from content)" aria-label="Meeting title">
+    <div class="timer" id="timer" aria-live="off">00:00</div><div class="level" aria-hidden="true"><i id="lvl"></i></div>
+    <div class="meta" id="hint">Keep this screen open while recording. Audio is saved to the server every 5 seconds.</div>
+    <button class="btn record" id="start">Start recording</button>
+    <button class="btn destructive" id="stop" hidden>Stop and transcribe</button></div>`;
+  let rec, id, t0, chain = Promise.resolve(), ctx, raf, wake, timer;
+  $('#start').onclick = async () => {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: true}}); }
+    catch (e) { $('#hint').textContent = 'Microphone access denied or unavailable (needs HTTPS): ' + e.message; return; }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+    ({id} = await api(`/record/start?title=${encodeURIComponent($('#title').value.trim())}&mime=${encodeURIComponent(mime)}`, {method: 'POST'}));
+    rec = new MediaRecorder(stream, mime ? {mimeType: mime} : {});
+    rec.ondataavailable = ev => { if (ev.data.size) chain = chain.then(() => fetch(`/api/record/${id}/chunk`, {method: 'POST', body: ev.data}).catch(() => { $('#hint').textContent = 'Upload hiccup, retrying…'; return fetch(`/api/record/${id}/chunk`, {method: 'POST', body: ev.data}); })); };
+    rec.start(5000);
+    t0 = Date.now(); timer = setInterval(() => $('#timer').textContent = ts((Date.now() - t0) / 1000), 500);
+    try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {}
+    ctx = new AudioContext(); const an = ctx.createAnalyser(); ctx.createMediaStreamSource(stream).connect(an); const buf = new Uint8Array(an.fftSize);
+    const tick = () => { an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128)); $('#lvl').style.width = Math.min(100, m / 1.28) + '%'; raf = requestAnimationFrame(tick); }; tick();
+    $('#start').hidden = true; $('#stop').hidden = false; $('#title').disabled = true; $('#hint').textContent = 'Recording…';
+    window.onbeforeunload = () => 'Recording in progress';
+  };
+  if (route()[1] === 'auto') { history.replaceState(null, '', '#/record'); $('#start').click(); }
+  $('#stop').onclick = async () => {
+    $('#stop').disabled = true; $('#hint').textContent = 'Finishing…'; window.onbeforeunload = null;
+    clearInterval(timer); cancelAnimationFrame(raf); wake?.release();
+    await new Promise(res => { rec.onstop = res; rec.stop(); });
+    rec.stream.getTracks().forEach(t => t.stop()); ctx.close();
+    await chain;
+    await api(`/record/${id}/finish`, {method: 'POST'});
+    location.hash = '#/note/' + id;
+  };
+}
+
+// ---------- note ----------
+async function viewNote(id) {
+  const n = await api('/notes/' + id);
+  const st = n.status.state, mode = state.mode || 'hinglish';
+  const busy = !['done', 'error'].includes(st);
+  app.innerHTML = `<div class="nav">${back('/', 'Notes')}<button id="menu" aria-label="More actions" style="font-size:24px;line-height:1">⋯</button></div>
+    <h1 style="font-size:28px;margin:4px 0 4px"><span id="title" tabindex="0" role="button" aria-label="Edit title">${esc(n.title)}</span></h1>
+    <p class="meta">${esc(fmtDate(n.created))}${n.duration ? ' · ' + dur(n.duration) : ''}${n.folder ? ' · ' + esc(n.folder) : ''}${n.backend ? ' · ' + esc(n.backend) : ''}</p>
+    ${busy ? progress(n.status) : ''}
+    ${st === 'error' ? `<div class="banner err">${esc(n.status.detail)}</div>` : ''}
+    ${n.warning ? `<div class="banner">${esc(n.warning)}</div>` : ''}
+    ${st === 'recording' ? '' : `<audio id="audio" controls preload="metadata" src="/api/notes/${id}/audio"></audio>`}
+    ${n.summary ? `<div class="card"><h3>Summary</h3>${md(n.summary)}</div>` : ''}
+    ${n.action_items?.length ? `<div class="card"><h3>Action items</h3><ul>${n.action_items.map(a => `<li>${a.owner ? '<b>' + esc(a.owner) + ':</b> ' : ''}${esc(a.item)}</li>`).join('')}</ul></div>` : ''}
+    ${n.segments ? `<div class="seg" role="tablist">${['hinglish','english','text'].map(m => `<button role="tab" aria-selected="${m===mode}" class="${m===mode?'on':''}" data-m="${m}">${{hinglish:'Hinglish',english:'English',text:'Original'}[m]}</button>`).join('')}</div>
+    <div class="group" id="turns">${n.segments.map((s, i) => `<div class="turn" data-i="${i}" data-t="${s.start}"><div class="who"><b data-spk="${esc(s.speaker)}" role="button" tabindex="0" aria-label="Rename ${esc(spkName(n, s.speaker))}">${esc(spkName(n, s.speaker))}</b>${ts(s.start)}</div>
+      <div>${esc(mode === 'english' ? (s.english || s.text) : mode === 'text' ? s.text : (s.hinglish || s.text))}</div>
+      ${mode === 'hinglish' && s.english && s.english !== (s.hinglish || s.text) ? `<div class="en">${esc(s.english)}</div>` : ''}</div>`).join('')}</div>` : ''}`;
+  const rename = async () => { const t = await ui.prompt('Title', n.title); if (t && t.trim() && t !== n.title) { await api('/notes/' + id, json('PATCH', {title: t})); render(); } };
+  $('#title').onclick = rename;
+  $('#title').onkeydown = e => { if (e.key === 'Enter') rename(); };
+  $('#menu').onclick = async () => {
+    const c = await ui.sheet(n.title, [{label: 'Rename', value: 'rename'}, {label: 'Move to folder…', value: 'folder'}, {label: 'Copy markdown', value: 'copy'}, {label: 'Re-transcribe', value: 'retry'}, {label: 'Delete', value: 'delete', destructive: true}]);
+    if (c === 'rename') rename();
+    else if (c === 'folder') { const f = await pickFolder(n.folder); if (f !== null) { await api('/notes/' + id, json('PATCH', {folder: f})); ui.toast(f ? 'Moved to ' + f : 'Removed from folder'); render(); } }
+    else if (c === 'copy') { const m = await (await fetch(`/api/notes/${id}/md`)).text(); try { await navigator.clipboard.writeText(m); ui.toast('Markdown copied'); } catch (e) { ui.alert('Could not copy', e.message); } }
+    else if (c === 'retry' && await ui.confirm('Re-transcribe?', 'The transcript, summary and speaker labels will be regenerated.', 'Re-transcribe')) { await api(`/notes/${id}/retranscribe`, json('POST', {})); render(); }
+    else if (c === 'delete' && await ui.confirm(`Delete "${n.title}"?`, 'The recording and transcript will be removed. This cannot be undone.', 'Delete', true)) { await api('/notes/' + id, {method: 'DELETE'}); location.hash = '#/'; }
+  };
+  app.querySelectorAll('.seg button').forEach(b => b.onclick = () => { state.mode = b.dataset.m; render(); });
+  const audio = $('#audio');
+  app.querySelectorAll('.turn').forEach(t => t.onclick = e => { if (e.target.dataset.spk || !audio) return; audio.currentTime = +t.dataset.t; audio.play(); });
+  app.querySelectorAll('[data-spk]').forEach(b => { b.onclick = async () => {
+    const name = await ui.prompt(`Name ${spkName(n, b.dataset.spk)}`, n.speakers[b.dataset.spk] || '', 'Name', 'This voice will be recognised in future recordings.');
+    if (name === null) return; await api('/notes/' + id, json('PATCH', {speakers: {[b.dataset.spk]: name}})); render(); };
+    b.onkeydown = e => { if (e.key === 'Enter') b.click(); }; });
+  if (audio && n.segments) audio.ontimeupdate = () => { const t = audio.currentTime; app.querySelectorAll('.turn').forEach(el => el.classList.toggle('playing', t >= +el.dataset.t && t < (+el.nextElementSibling?.dataset.t || 1e9))); };
+  if (busy) pollTimer = setTimeout(() => render(true), 3000);
+}
+
+// ---------- settings ----------
+async function viewSettings() {
+  const s = await api('/settings'), sp = await api('/speakers');
+  const row = (label, ctl) => `<label class="row"><span class="main">${label}</span>${ctl}</label>`;
+  app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div><h1>Settings</h1>
+    <h2>Speaker detection</h2><div class="group"><div class="row"><div class="main"><div class="title">${s.diarization === 'ok' ? 'On' : 'Off'}</div><div class="sub" style="white-space:normal">${s.diarization === 'ok' ? 'pyannote community-1 on GPU' : esc(s.diarization) + '. Accept the model terms at huggingface.co/pyannote/speaker-diarization-community-1, put HF_TOKEN=… in ~/.config/audio-notes/env and restart the service.'}</div></div></div></div>
+    <h2>Known voices</h2><div class="group">${Object.keys(sp).length ? Object.entries(sp).map(([name, c]) => `<div class="row"><div class="main"><div class="title">${esc(name)}</div><div class="sub">${c} voice sample${c === 1 ? '' : 's'}</div></div><button class="destructive" data-del="${esc(name)}" aria-label="Forget ${esc(name)}">Forget</button></div>`).join('') : '<div class="row"><div class="sub" style="white-space:normal">None yet. Open a note and tap a speaker name to name them.</div></div>'}
+    ${row('Match threshold', `<input type="number" step="0.05" min="0.3" max="0.95" name="match_threshold" value="${s.match_threshold}" aria-label="Match threshold">`)}</div>
+    <h2>Transcription</h2><div class="group">
+    ${row('Remove background noise', `<input type="checkbox" class="toggle" name="denoise" ${s.denoise ? 'checked' : ''}>`)}
+    ${row('Noise attenuation (dB)', `<input type="number" step="5" min="5" max="100" name="atten_db" value="${s.atten_db}" aria-label="Noise attenuation in dB">`)}
+    ${row('Language', `<select name="language" aria-label="Language"><option value="auto" ${s.language==='auto'?'selected':''}>Auto (Hindi + English)</option><option value="hi" ${s.language==='hi'?'selected':''}>Hindi</option><option value="en" ${s.language==='en'?'selected':''}>English</option></select>`)}
+    <div class="row"><div class="main"><div class="title">Models</div><div class="sub" style="white-space:normal">ASR: ${esc(s.asr_backend)} · Hinglish/English/summary: ${esc(s.llm)} via Ollama</div></div></div></div>`;
+  app.querySelectorAll('[name]').forEach(i => i.onchange = () => api('/settings', json('PUT', {[i.name]: i.type === 'checkbox' ? i.checked : i.type === 'number' ? +i.value : i.value})));
+  app.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (await ui.confirm(`Forget ${b.dataset.del}'s voice?`, '', 'Forget', true)) { await api('/speakers/' + encodeURIComponent(b.dataset.del), {method: 'DELETE'}); render(); } });
+}
+
+const state = {};
+async function render(refresh = false) {
+  clearTimeout(pollTimer);
+  if (dlg.open && !refresh) { dlg.close(); dlg.innerHTML = ''; }
+  if (dlg.open) { pollTimer = setTimeout(() => render(true), 3000); return; }  // don't repaint under an open dialog
+  const y = refresh ? window.scrollY : 0;
+  const [p, id] = route();
+  try {
+    if (p === 'note') await viewNote(id); else if (p === 'record') await viewRecord(); else if (p === 'settings') await viewSettings(); else await viewList();
+  } catch (e) { app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div><div class="banner err">${esc(e.message)}</div>`; }
+  window.scrollTo(0, y);
+}
+window.onhashchange = render;
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+const shared = new URLSearchParams(location.search).get('shared');
+if (shared) { history.replaceState(null, '', location.pathname + location.hash); setTimeout(() => ui.toast(shared === 'dup' ? 'Already transcribed — opening it' : shared === 'ok' ? 'Shared file queued' : shared + ' files queued'), 300); }
+render();
+</script>
+</body>
+</html>
