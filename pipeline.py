@@ -16,7 +16,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3.5:9b")
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 LLM_SHARES_GPU = any(h in OLLAMA for h in ("127.0.0.1", "localhost"))  # remote Ollama: never evict either side
 SR = 16000
-DEFAULT_SETTINGS = {"match_threshold": 0.55, "denoise": True, "atten_db": 30, "language": "auto"}
+DEFAULT_SETTINGS = {"match_threshold": 0.55, "denoise": True, "atten_db": 30, "language": "auto", "theme": "system"}
 LANG_NAMES = {"en": "English", "hi": "Hindi"}
 # Tested on real Hinglish phone clips: forcing "English" keeps English words in Latin script and Hindi in Devanagari
 # (auto-detect writes everything in Devanagari). The romanised context nudges mixed output further.
@@ -38,12 +38,13 @@ def write_json(p, obj):
     tmp.replace(p)
 
 
-def settings():
-    return {**DEFAULT_SETTINGS, **read_json(NOTES / "settings.json", {})}
+def settings(root=NOTES):
+    """Per-root (= per person) settings; a note's root is its parent directory."""
+    return {**DEFAULT_SETTINGS, **read_json(root / "settings.json", {})}
 
 
-def speakers_db():
-    return read_json(NOTES / "speakers.json", {})
+def speakers_db(root=NOTES):
+    return read_json(root / "speakers.json", {})
 
 
 def set_status(note_dir, state, detail="", started=None):
@@ -340,8 +341,8 @@ def strip_context(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def match_speakers(embs, threshold):
-    db = speakers_db()
+def match_speakers(embs, threshold, root=NOTES):
+    db = speakers_db(root)
     names = {}
     for spk, v in embs.items():
         best, best_sim = None, threshold
@@ -355,13 +356,13 @@ def match_speakers(embs, threshold):
     return names
 
 
-def remember_speaker(name, embedding):
-    db = speakers_db()
+def remember_speaker(name, embedding, root=NOTES):
+    db = speakers_db(root)
     rec = db.setdefault(name, {"model": EMB_MODEL, "embeddings": []})
     if rec.get("model") != EMB_MODEL:
         rec.update(model=EMB_MODEL, embeddings=[])
     rec["embeddings"] = (rec["embeddings"] + [embedding])[-10:]  # ponytail: keep last 10 samples per person
-    write_json(NOTES / "speakers.json", db)
+    write_json(root / "speakers.json", db)
 
 
 # ---------- hinglish + english via local LLM ----------
@@ -473,7 +474,8 @@ def write_md(note_dir, note):
 def run(note_dir):
     note_dir = Path(note_dir)
     meta = read_json(note_dir / "meta.json", {})
-    cfg = {**settings(), **meta.get("options", {})}
+    root = note_dir.parent
+    cfg = {**settings(root), **meta.get("options", {})}
     src = next(p for p in note_dir.iterdir() if p.stem == "audio")
     started = time.time()
     st = lambda state, detail="": set_status(note_dir, state, detail, started)
@@ -496,7 +498,7 @@ def run(note_dir):
             texts = transcribe_clips(audio, clips, lang, lambda d: st("transcribe", d))
 
             spk_ids = sorted({c[2] for c in clips})
-            names = match_speakers(embs, cfg["match_threshold"]) if embs else {}
+            names = match_speakers(embs, cfg["match_threshold"], root) if embs else {}
             MODELS.last_used = time.time()
             segments = [{"start": round(s, 2), "end": round(e, 2), "speaker": spk, "text": t, "lang": l}
                         for (s, e, spk), (t, l) in zip(clips, texts) if t]

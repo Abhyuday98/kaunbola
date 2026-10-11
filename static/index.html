@@ -74,6 +74,8 @@ audio{width:100%;margin:8px 0 4px}
 .level i{display:block;height:100%;background:var(--green);width:0;transition:width .1s}
 .titleinput{font:inherit;font-size:20px;font-weight:600;background:none;border:0;border-bottom:1px solid var(--separator);width:100%;color:var(--label);outline:none;padding:8px 0;text-align:center}
 .empty{text-align:center;color:var(--secondary);padding:48px 16px}
+[data-theme="pink"]{--bg:#fbeef3;--card:#fff;--tint:#ff2d55;--fill:rgba(255,45,85,.1);--separator:rgba(120,60,80,.25)}
+@media (prefers-color-scheme: dark){[data-theme="pink"]{--bg:#140a0f;--card:#261620;--tint:#ff375f;--fill:rgba(255,55,95,.2);--separator:rgba(140,90,110,.5)}}
 progress{width:100%;height:6px;accent-color:var(--tint)}
 .toggle{appearance:none;width:51px;height:31px;border-radius:16px;background:var(--fill);position:relative;flex:none;cursor:pointer;margin:0}
 .toggle:checked{background:var(--green)}
@@ -104,6 +106,7 @@ dialog::backdrop{background:var(--dim);backdrop-filter:blur(4px);-webkit-backdro
 </style>
 </head>
 <body>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||''}catch(e){}</script>
 <main id="app"></main>
 <input type="file" id="file" multiple accept="audio/*,video/*,.m4a,.mp3,.wav,.ogg,.opus,.webm,.mp4" class="sr" aria-hidden="true">
 <dialog id="dlg"></dialog>
@@ -317,8 +320,10 @@ async function viewSettings() {
     ${row('Remove background noise', `<input type="checkbox" class="toggle" name="denoise" ${s.denoise ? 'checked' : ''}>`)}
     ${row('Noise attenuation (dB)', `<input type="number" step="5" min="5" max="100" name="atten_db" value="${s.atten_db}" aria-label="Noise attenuation in dB">`)}
     ${row('Language', `<select name="language" aria-label="Language"><option value="auto" ${s.language==='auto'?'selected':''}>Auto (Hindi + English)</option><option value="hi" ${s.language==='hi'?'selected':''}>Hindi</option><option value="en" ${s.language==='en'?'selected':''}>English</option></select>`)}
-    <div class="row"><div class="main"><div class="title">Models</div><div class="sub" style="white-space:normal">ASR: ${esc(s.asr_backend)} · Hinglish/English/summary: ${esc(s.llm)} via Ollama</div></div></div></div>`;
-  app.querySelectorAll('[name]').forEach(i => i.onchange = () => api('/settings', json('PUT', {[i.name]: i.type === 'checkbox' ? i.checked : i.type === 'number' ? +i.value : i.value})));
+    ${row('Theme', `<select name="theme" aria-label="Theme"><option value="system" ${s.theme!=='pink'?'selected':''}>Classic</option><option value="pink" ${s.theme==='pink'?'selected':''}>Pink</option></select>`)}
+    <div class="row"><div class="main"><div class="title">Models</div><div class="sub" style="white-space:normal">ASR: ${esc(s.asr_backend)} · Hinglish/English/summary: ${esc(s.llm)} via Ollama</div></div></div>
+    ${s.login ? `<div class="row"><div class="main"><div class="title">Signed in as</div><div class="sub">${esc(s.name || s.login)}${s.owner ? '' : ' · your notes are only visible to you'}</div></div></div>` : ''}</div>`;
+  app.querySelectorAll('[name]').forEach(i => i.onchange = () => { api('/settings', json('PUT', {[i.name]: i.type === 'checkbox' ? i.checked : i.type === 'number' ? +i.value : i.value})); if (i.name === 'theme') applyTheme(i.value); });
   app.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (await ui.confirm(`Forget ${b.dataset.del}'s voice?`, '', 'Forget', true)) { await api('/speakers/' + encodeURIComponent(b.dataset.del), {method: 'DELETE'}); render(); } });
 }
 
@@ -335,6 +340,14 @@ async function render(refresh = false) {
   window.scrollTo(0, y);
 }
 window.onhashchange = render;
+function applyTheme(t) {
+  t = t === 'pink' ? 'pink' : '';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('theme', t); } catch (e) {}
+  const c = t === 'pink' ? ['#fbeef3', '#140a0f'] : ['#f2f2f7', '#000000'];
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => m.content = c[i]);
+}
+api('/settings').then(s => applyTheme(s.theme)).catch(() => {});
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 const shared = new URLSearchParams(location.search).get('shared');
 if (shared) { history.replaceState(null, '', location.pathname + location.hash); setTimeout(() => ui.toast(shared === 'dup' ? 'Already transcribed — opening it' : shared === 'ok' ? 'Shared file queued' : shared + ' files queued'), 300); }

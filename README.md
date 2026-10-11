@@ -105,6 +105,18 @@ The script binds Ollama to that one address only. A 35B mixture-of-experts model
 
 Deleting a known voice also untags that name in every note, so the labels can be redone.
 
+## More than one person
+
+Anyone you add to your tailnet can use the app with their own notes. Tailscale Serve stamps each request with the visitor's login and overwrites any header a client sends, so the server needs no login of its own: requests with your login, or with none (the CLI and the Claude skill run locally), use your notes; every other login gets its own root under `~/notes/audio-users/<login>/` with its own voice memory, settings and theme. A note id only resolves inside the requester's root, so nobody can open anyone else's notes, and the CLI and skill never see the other roots. Set `OWNER_LOGIN` in the env file to your tailnet login.
+
+Everyone shares the one GPU queue. Each person picks their own look in Settings; there is a pink theme besides the classic one.
+
+By default a new tailnet member can reach everything on your machines, not just this app. An access rule in the Tailscale admin console limits them to the one port:
+
+```json
+{"action": "accept", "src": ["their@login"], "dst": ["your-machine:8446"]}
+```
+
 ## Where it is honest about its limits
 
 - **Speaker attribution is the weakest link**, as in every tool of this kind. The diarizer over-splits: one person can come back as two speakers in a long call, and short interjections ("okay", "correct") land in a mixed cluster. Naming a voice in three or four recordings makes matching robust; telling the diarizer how many people were in the room would help more and is not wired up yet.
