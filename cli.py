@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kaunbola CLI (stdlib only). transcribe goes through the server; list/search/show read the notes dir."""
+"""turnwise CLI (stdlib only). transcribe goes through the server; list/search/show read the notes dir."""
 import hashlib, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 

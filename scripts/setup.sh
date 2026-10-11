@@ -42,7 +42,7 @@ fi
 mkdir -p ~/.config/systemd/user
 cat > ~/.config/systemd/user/audio-notes.service <<UNIT
 [Unit]
-Description=kaunbola transcription server
+Description=turnwise transcription server
 After=network.target
 
 [Service]

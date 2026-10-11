@@ -1,6 +1,6 @@
 {
-  "name": "Kaunbola",
-  "short_name": "Kaunbola",
+  "name": "Turnwise",
+  "short_name": "Turnwise",
   "description": "Record or upload meetings; get speaker-labelled Hinglish + English transcripts with summaries.",
   "start_url": "/",
   "scope": "/",

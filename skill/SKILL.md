@@ -1,11 +1,11 @@
 ---
-name: kaunbola
+name: turnwise
 description: Transcribe meeting recordings (Hindi + English + Hinglish, speaker-labelled, noise-removed, with auto title, summary and action items) on the local GPU, and retrieve past transcripts from the notes knowledge base. Use when the user mentions transcribing, a recording, meeting notes, audio/voice/video files (.m4a .mp3 .wav .webm .mp4), "what did X say in the meeting", importing a folder of recordings, or wants to search/recall past meetings.
 ---
 
-# kaunbola
+# turnwise
 
-Local meeting transcription (web app on the tailnet, GPU pipeline, this CLI). Set `KAUNBOLA` to the repo checkout.
+Local meeting transcription (web app on the tailnet, GPU pipeline, this CLI). Set `TURNWISE` to the repo checkout.
 Notes live in `~/notes/audio/<id>/` with `transcript.md` (read this), `transcript.json` (structured), `meta.json` (title, folder, sha256), `audio.*`.
 
 Other people who use the app get their own notes under `~/notes/audio-users/<login>/`. Those are theirs: never list, search, read or mention them unless the user explicitly asks about that person's notes.
@@ -14,8 +14,8 @@ Always use the CLI; never load the models yourself (one server process owns the 
 and produces the same output: title generated from content, summary, action items, speaker-labelled Hinglish + English transcript.
 
 ```bash
-KAUNBOLA="$HOME/kaunbola"            # wherever the repo is checked out
-CLI="$KAUNBOLA/.venv/bin/python $KAUNBOLA/cli.py"
+TURNWISE="$HOME/turnwise"            # wherever the repo is checked out
+CLI="$TURNWISE/.venv/bin/python $TURNWISE/cli.py"
 $CLI transcribe <file> [title] [--folder F]   # uploads, waits, prints transcript.md. If the same file (sha256) was done before it says so and prints it.
 $CLI import <dir> [--min-seconds 60]          # queue every recording under dir (folder = first sub-directory); skips already-transcribed files; returns immediately
 $CLI list [n]                                 # id, status, duration, folder, title, speakers — newest first
