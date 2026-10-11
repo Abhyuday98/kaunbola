@@ -1,6 +1,6 @@
-# kaunbola
+# turnwise
 
-*Kaun bola* is Hindi for "who said it".
+Turn by turn: who spoke, what they said, in the words they used.
 
 Self-hosted meeting transcription for conversations that switch between Hindi and English mid-sentence. Record on your phone or drop in a file, and your own GPU turns it into a transcript that says who said what, in the words they actually used: Hinglish written in Latin script, an English line under each turn, speakers named once and recognised in every later recording, plus a title, summary and action items. Nothing leaves your machines.
 
@@ -51,8 +51,8 @@ Models load lazily, stay resident between jobs, and unload after ten minutes idl
 Tested on Ubuntu with one RTX A2000 (12 GB), Python 3.12, ffmpeg, and Ollama already installed. A 30-minute recording takes about nine minutes end to end on that card.
 
 ```bash
-git clone https://github.com/Abhyuday98/kaunbola
-cd kaunbola
+git clone https://github.com/Abhyuday98/turnwise
+cd turnwise
 bash scripts/setup.sh        # venv, pinned requirements, DeepFilterNet binary, config template, user service
 ```
 
@@ -95,7 +95,7 @@ The script binds Ollama to that one address only. A 35B mixture-of-experts model
 .venv/bin/python cli.py list | search <words> | show <id> | speakers
 ```
 
-**Claude Code.** Copy `skill/` to `~/.claude/skills/kaunbola/` and set the path at the top of it. Claude then transcribes files and answers questions about past meetings through the CLI, never touching the GPU itself.
+**Claude Code.** Copy `skill/` to `~/.claude/skills/turnwise/` and set the path at the top of it. Claude then transcribes files and answers questions about past meetings through the CLI, never touching the GPU itself.
 
 **Speaker maintenance** (`notes_tool.py`):
 

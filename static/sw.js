@@ -1,6 +1,6 @@
 // Service worker: makes the app installable, keeps the app shell available when the tunnel is down
-// (so the phone shows our "retrying" banner instead of the browser's error page), and handles "share to Kaunbola".
-const SHELL = 'shell-v2';
+// (so the phone shows our "retrying" banner instead of the browser's error page), and handles "share to Turnwise".
+const SHELL = 'shell-v3';
 self.addEventListener('install', e => e.waitUntil(caches.open(SHELL).then(c => c.addAll(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'])).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== SHELL).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {
