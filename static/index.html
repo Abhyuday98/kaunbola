@@ -37,7 +37,7 @@ a.btn,a.back{text-decoration:none}
 .btn.record{background:var(--red);color:#fff;border-radius:999px;padding:0 24px}
 .btn[disabled]{opacity:.4}
 .nav{display:flex;align-items:center;justify-content:space-between;min-height:44px;gap:8px}
-.nav .back{display:inline-flex;align-items:center;gap:2px;font-size:17px;margin-left:-8px}
+.nav .back{display:inline-flex;align-items:center;gap:2px;font-size:17px;margin-left:-8px;min-height:44px;padding:0 8px}
 .group{background:var(--card);border-radius:12px;overflow:hidden;margin:0 0 8px}
 .row{display:flex;align-items:center;gap:12px;padding:11px 16px;min-height:44px;position:relative;text-decoration:none;color:inherit;width:100%;text-align:left}
 .row+.row::before{content:"";position:absolute;left:16px;right:0;top:0;border-top:.5px solid var(--separator)}
@@ -328,18 +328,28 @@ async function viewSettings() {
 }
 
 const state = {};
+let lastRoute = '', retryTimer = null, retryDelay = 2000;
 async function render(refresh = false) {
-  clearTimeout(pollTimer);
+  clearTimeout(pollTimer); clearTimeout(retryTimer);
   if (dlg.open && !refresh) { dlg.close(); dlg.innerHTML = ''; }
   if (dlg.open) { pollTimer = setTimeout(() => render(true), 3000); return; }  // don't repaint under an open dialog
-  const y = refresh ? window.scrollY : 0;
+  const sameRoute = location.hash === lastRoute;
+  const y = refresh || sameRoute ? window.scrollY : 0;  // only a real navigation starts at the top
+  lastRoute = location.hash;
   const [p, id] = route();
   try {
     if (p === 'note') await viewNote(id); else if (p === 'record') await viewRecord(); else if (p === 'settings') await viewSettings(); else await viewList();
-  } catch (e) { app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div><div class="banner err">${esc(e.message)}</div>`; }
+    retryDelay = 2000;
+  } catch (e) {
+    const offline = e instanceof TypeError;  // fetch failed: no network / tunnel not up yet (Safari says "Load failed")
+    app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div><div class="banner err">${offline ? 'Can\u2019t reach the server. Retrying\u2026' : esc(e.message)}</div>`;
+    if (offline) { retryTimer = setTimeout(() => render(true), retryDelay); retryDelay = Math.min(retryDelay * 2, 15000); }
+  }
   window.scrollTo(0, y);
 }
-window.onhashchange = render;
+window.onhashchange = () => render();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { retryDelay = 2000; render(true); } });  // coming back to the app: refresh in place
+window.addEventListener('online', () => { retryDelay = 2000; render(true); });
 function applyTheme(t) {
   t = t === 'pink' ? 'pink' : '';
   document.documentElement.dataset.theme = t;
