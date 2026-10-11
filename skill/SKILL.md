@@ -8,6 +8,8 @@ description: Transcribe meeting recordings (Hindi + English + Hinglish, speaker-
 Local meeting transcription (web app on the tailnet, GPU pipeline, this CLI). Set `KAUNBOLA` to the repo checkout.
 Notes live in `~/notes/audio/<id>/` with `transcript.md` (read this), `transcript.json` (structured), `meta.json` (title, folder, sha256), `audio.*`.
 
+Other people who use the app get their own notes under `~/notes/audio-users/<login>/`. Those are theirs: never list, search, read or mention them unless the user explicitly asks about that person's notes.
+
 Always use the CLI; never load the models yourself (one server process owns the GPU). Every path (web app, CLI, import) runs the same engine
 and produces the same output: title generated from content, summary, action items, speaker-labelled Hinglish + English transcript.
 

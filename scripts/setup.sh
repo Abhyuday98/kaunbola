@@ -30,6 +30,10 @@ ASR_MODE=window
 # point at another machine to keep this GPU for speech
 # OLLAMA_URL=http://127.0.0.1:11434
 # NOTES_DIR=/home/you/notes/audio
+# More than one person: your own tailnet login (tailscale status --json | jq -r '.User[(.Self.UserID|tostring)].LoginName').
+# Anyone else on the tailnet gets their own notes, voices and settings under USERS_DIR.
+# OWNER_LOGIN=you@github
+# USERS_DIR=/home/you/notes/audio-users
 ENV
   chmod 600 ~/.config/audio-notes/env
   echo ">> edit ~/.config/audio-notes/env and paste your Hugging Face token"
