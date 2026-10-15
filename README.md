@@ -6,6 +6,8 @@ Self-hosted meeting transcription for conversations that switch between Hindi an
 
 I built it after noticing what transcription tools do with conversations that switch between Hindi and English: they either force the whole thing into English, write it in Devanagari, or send the audio to someone else's cloud. What I wanted was narrower than "AI meeting notes": capture who said what, verbatim, in the script people actually type in, and be able to ask questions about it later from Claude Code.
 
+![A short two-person Hinglish meeting transcribed from the command line: speakers, timestamps, the Hinglish line and an English line per turn, summary and action items](docs/demo.gif)
+
 A turn in the transcript looks like this:
 
 ```
