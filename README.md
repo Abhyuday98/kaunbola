@@ -51,7 +51,7 @@ Models load lazily, stay resident between jobs, and unload after ten minutes idl
 Tested on Ubuntu with one RTX A2000 (12 GB), Python 3.12, ffmpeg, and Ollama already installed. A 30-minute recording takes about nine minutes end to end on that card.
 
 ```bash
-git clone https://github.com/Abhyuday98/turnwise
+git clone https://github.com/samotherguy/turnwise
 cd turnwise
 bash scripts/setup.sh        # venv, pinned requirements, DeepFilterNet binary, config template, user service
 ```
