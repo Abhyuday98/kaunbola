@@ -267,3 +267,39 @@ def resolve(root, ref, aliases):
     s = t["segments"][int(turn)]
     return {"ref": ref, "note": nid, "title": t.get("title", nid), "created": t.get("created", ""), "turn": int(turn), "start": s["start"], "end": s["end"],
             "speaker": spk_name(t, s["speaker"]), "hinglish": turn_text(s), "english": s.get("english") or ""}
+
+
+# ---------- models ----------
+CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or str(Path.home() / ".npm-global/bin/claude")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "")
+CLAUDE_CWD = Path("~/.config/audio-notes/claude-cwd").expanduser()  # empty: no CLAUDE.md, no project memory, no skills get loaded
+
+
+def call_local(messages):
+    return pl.llm_messages(messages, ANSWER_SCHEMA, num_predict=2048)
+
+
+def claude_argv(prompt):
+    # the account's MCP connectors alone are ~140k tokens of system prompt; these flags bring a call down to ~4k
+    return [CLAUDE_BIN, "-p", prompt, "--output-format", "json", "--json-schema", json.dumps(ANSWER_SCHEMA), "--append-system-prompt", SYSTEM_PROMPT,
+            "--setting-sources", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--tools", "", "--no-session-persistence",
+            *(["--model", CLAUDE_MODEL] if CLAUDE_MODEL else [])]
+
+
+def flatten(messages):
+    return "\n\n".join(f"{'User' if m['role'] == 'user' else 'Assistant'}:\n{m['content']}" for m in messages if m["role"] != "system")
+
+
+def call_claude(messages):
+    CLAUDE_CWD.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(claude_argv(flatten(messages)), cwd=CLAUDE_CWD, capture_output=True, text=True, timeout=180)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout).strip()[:300] or "claude failed")
+    out = json.loads(r.stdout)
+    if isinstance(out.get("structured_output"), dict):
+        return out["structured_output"]
+    res = out.get("result")
+    return res if isinstance(res, dict) else json.loads(res)
+
+
+MODELS = {"local": call_local, "claude": call_claude}
