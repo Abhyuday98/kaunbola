@@ -6,7 +6,7 @@ description: Transcribe meeting recordings (Hindi + English + Hinglish, speaker-
 # turnwise
 
 Local meeting transcription (web app on the tailnet, GPU pipeline, this CLI). Set `TURNWISE` to the repo checkout.
-Notes live in `~/notes/audio/<id>/` with `transcript.md` (read this), `transcript.json` (structured), `meta.json` (title, folder, sha256), `audio.*`.
+Notes live in `~/notes/audio/<id>/` with `transcript.md` (read this), `transcript.json` (structured), `meta.json` (title, folder, sha256), `audio.*`, plus `chunks.json`/`chunks.npy` (the chat's search index; never edit). `~/notes/audio/chats/` holds the user's chat sessions, not notes.
 
 Other people who use the app get their own notes under `~/notes/audio-users/<login>/`. Those are theirs: never list, search, read or mention them unless the user explicitly asks about that person's notes.
 
@@ -23,6 +23,7 @@ $CLI ask <question> [--note <id>] [--model local|claude]   # answers from the tr
 $CLI search <words>                           # grep across all transcript.md, prints "<id>:<line>"
 $CLI show <id>                                # prints transcript.md
 $CLI speakers                                 # known voices (named by the user in the web app)
+$CLI reindex                                  # rebuild the chat's search index (after bulk changes or a rename); runs in the background
 ```
 
 If the server is unreachable: `systemctl --user start audio-notes` (logs: `journalctl --user -u audio-notes -f`).
@@ -35,7 +36,7 @@ Long files take time (~9 min per 30 min of audio); `transcribe` prints progress 
 `transcript.json`: `{id, title, created, duration, folder, summary, action_items: [{owner, item}], speakers: {SPEAKER_00: "Name"|null}, segments: [{start, end, speaker, text (raw ASR), hinglish, english, lang}], warning?}`.
 
 ## Answering questions about meetings
-1. `ask "<the question>"` (add `--note <id>` to restrict it to one recording). It retrieves the relevant turns, answers only from them, and prints the turns it used, so you can quote them. The local model answers by default; `--model claude` is the owner's choice, not yours.
+1. `ask "<the question>"` (add `--note <id>` to restrict it to one recording). It retrieves the relevant turns, answers only from them, and prints the turns it used, so you can quote them. The local model answers by default; `--model claude` sends the retrieved turns to Anthropic and is the owner's choice, not yours.
 2. For reading a whole meeting, `search` for the topic / person, then `show` the matching ids (or read `~/notes/audio/<id>/transcript.md` directly). Summaries and action items are at the top of each file.
 3. Quote speakers by name; unnamed ones appear as "Speaker 1/2…". The user names voices in the web app and names propagate to future recordings automatically.
 

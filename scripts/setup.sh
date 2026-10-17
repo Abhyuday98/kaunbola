@@ -30,7 +30,7 @@ ASR_MODE=window
 # point at another machine to keep this GPU for speech
 # OLLAMA_URL=http://127.0.0.1:11434
 # NOTES_DIR=/home/you/notes/audio
-# Chat over the transcripts: embeddings (ollama pull bge-m3 on the machine below) and, for the owner, Claude Code headless
+# Chat over the transcripts: embeddings (run: ollama pull bge-m3) and, for the owner, Claude Code headless (claude on PATH, logged in)
 # EMBED_URL=http://127.0.0.1:11434
 # EMBED_MODEL=bge-m3
 # CLAUDE_BIN=/home/you/.npm-global/bin/claude

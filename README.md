@@ -2,7 +2,7 @@
 
 Turn by turn: who spoke, what they said, in the words they used.
 
-Self-hosted meeting transcription for conversations that switch between Hindi and English mid-sentence. Record on your phone or drop in a file, and your own GPU turns it into a transcript that says who said what, in the words they actually used: Hinglish written in Latin script, an English line under each turn, speakers named once and recognised in every later recording, plus a title, summary and action items. Nothing leaves your machines.
+Self-hosted meeting transcription for conversations that switch between Hindi and English mid-sentence. Record on your phone or drop in a file, and your own GPU turns it into a transcript that says who said what, in the words they actually used: Hinglish written in Latin script, an English line under each turn, speakers named once and recognised in every later recording, plus a title, summary and action items. Nothing leaves your machines, unless you choose to have Claude answer a chat question.
 
 I built it after noticing what transcription tools do with conversations that switch between Hindi and English: they either force the whole thing into English, write it in Devanagari, or send the audio to someone else's cloud. What I wanted was narrower than "AI meeting notes": capture who said what, verbatim, in the script people actually type in, and be able to ask questions about it later from Claude Code.
 
@@ -24,6 +24,8 @@ A turn in the transcript looks like this:
 - **Title, summary and action items** generated from the content.
 - **Folders, a date view, and dedupe by content hash**: re-sending a file you already transcribed just opens it, whatever it is called.
 - **A chat that answers from the recordings** and shows the moments it drew on: tap one and it plays, with the words on screen. Across everything or inside one note, with sessions kept. Answered by the local model or, for the owner, by Claude Code on their own subscription.
+- **Every voice has a colour.** Each person gets a hue, the same in the transcript, the chat sources and the player, so who said what reads at a glance. Two small monsters on the home screen take turns talking, which is the whole idea.
+- **Fast on a phone over a tunnel.** Screens paint before the server answers, going back is instant and keeps your place, and no request hangs: after twenty seconds you get a retry banner.
 - **A Claude Code skill** so that "what did we decide about the draft last week?" is answered from the transcripts.
 - **One engine** behind the web app, the CLI and the bulk importer, so every path produces the same note.
 - **Runs as a service**: starts on boot, frees the GPU when idle, resumes interrupted jobs after a restart.
@@ -70,7 +72,7 @@ Then:
 tailscale serve --bg --https=8446 http://127.0.0.1:8470
 ```
 
-Open the address Tailscale gives you on the phone and add it to the home screen. The installed app gets a "Start recording" shortcut on long-press and appears in the share sheet, so a recording made with the phone's own voice recorder can be sent straight to it. For long meetings use the native recorder and share: a browser tab does not survive the screen locking or a phone call.
+The app serves everything itself, including its display font, so the phone talks to your machine and nothing else. Open the address Tailscale gives you on the phone and add it to the home screen. The installed app gets a "Start recording" shortcut on long-press and appears in the share sheet, so a recording made with the phone's own voice recorder can be sent straight to it. For long meetings use the native recorder and share: a browser tab does not survive the screen locking or a phone call.
 
 ### A second machine for the LLM
 
@@ -99,7 +101,11 @@ The script binds Ollama to that one address only. A 35B mixture-of-experts model
 .venv/bin/python cli.py list | search <words> | show <id> | speakers | reindex
 ```
 
-**Asking questions.** The Ask button on the home screen (or "Ask about this recording" in a note's menu) opens a chat. Each answer is written only from transcript turns and lists them underneath: who, which recording, when, the Hinglish and the English. Tap one to play that moment in a small player that shows the words turn by turn and links into the full note. Chats are kept as sessions. How it works: every note gets an index of its turns embedded with `bge-m3` through Ollama (`EMBED_URL`, `EMBED_MODEL`); a question retrieves the closest chunks plus exact-name hits, and the model gets those turns with references it must cite; references it invents are dropped before you see them. The local model is the same one that writes the Hinglish. The owner can switch to Claude, which runs the Claude Code CLI in headless mode on the server with `--setting-sources ""` and no MCP servers, so each question costs a few thousand tokens of overhead rather than the account's whole connector catalogue (`CLAUDE_BIN`, `CLAUDE_MODEL`).
+**Asking questions.** The Ask button on the home screen (or "Ask about this recording" in a note's menu) opens a chat. Each answer is written only from transcript turns and lists them underneath: who, which recording, when, the Hinglish and the English. Tap one to play that moment in a small player that shows the words turn by turn and links into the full note. Chats are kept as sessions; clear one or start another from its menu. Follow-up questions keep the previous question's material in view, so "and what did she reply?" works.
+
+How it works: every note gets an index of its turns, embedded with `bge-m3` through Ollama together with the note's title (`EMBED_URL`, `EMBED_MODEL`; built when a note finishes and backfilled at startup, or with `cli.py reindex`). A question retrieves the closest chunks, boosts the chunks of any speaker named in the question, adds exact hits for rare words and numbers, and hands the model those turns with references it must cite. References it invents are dropped before you see them; a quoted passage it forgot to cite is matched back to its turn. Every Ollama call shares one context size, so the model keeps its cache between questions. On a 12 GB card the local model answers in 30 to 40 seconds; follow-ups are faster.
+
+The owner can switch a question to Claude. That runs the Claude Code CLI in headless mode on the server with `--setting-sources ""` and no MCP servers, so each question costs a few thousand tokens of overhead rather than the account's whole connector catalogue (`CLAUDE_BIN`, `CLAUDE_MODEL`). Be clear about what that means: the retrieved turns and the question go to Anthropic. The local model never leaves the tailnet, and guests never get the Claude option.
 
 **Claude Code.** Copy `skill/` to `~/.claude/skills/turnwise/` and set the path at the top of it. Claude then transcribes files and answers questions about past meetings through the CLI, never touching the GPU itself.
 
@@ -129,6 +135,8 @@ By default a new tailnet member can reach everything on your machines, not just 
 - **The Hinglish line is a rewrite.** The LLM re-scripts and translates; it does not hear anything. A small model occasionally tidies a filler word. The raw recognition is always kept.
 - **Qwen echoes its prompt** on silent stretches, producing the context sentence as if someone said it. These are stripped wherever they appear, and `repair` cleans older notes.
 - **No login.** Access control is the tailnet. Do not expose it further without putting something in front.
+- **The chat is retrieval, not reading.** The model sees the turns that matched, about two questions' worth, not the whole corpus. A question about something phrased very differently from how it was said can miss; the list of recordings in the prompt lets the model say which recording exists but was not retrieved.
+- **Renaming a note** keeps its old title in the search index until the next restart or `cli.py reindex`.
 - **One worker, one GPU.** Jobs queue. Fine for one person, not for a team.
 - **Tested on one machine and one language pair.** Qwen3-ASR covers 52 languages, but the prompt, context sentence and LLM instructions are written for Hindi and English.
 
@@ -149,5 +157,16 @@ Things I would do next, roughly in the order they would help:
 
 ## Licences
 
-Code is MIT. The models have their own terms: pyannote community-1 is CC-BY-4.0 and gated; Qwen3-ASR is Apache-2.0; DeepFilterNet is MIT/Apache-2.0; the MMS forced aligner weights are CC-BY-NC-4.0, which matters if you use this commercially.
+Code is MIT. The models have their own terms: pyannote community-1 is CC-BY-4.0 and gated; Qwen3-ASR is Apache-2.0; DeepFilterNet is MIT/Apache-2.0; the MMS forced aligner weights are CC-BY-NC-4.0, which matters if you use this commercially. The Baloo 2 font bundled in `static/fonts/` is under the SIL Open Font License.
+
+## Tests
+
+```bash
+.venv/bin/python -I tests/test_chat.py   # index, retrieval, prompt budget, validation, sessions, race on clear/delete
+.venv/bin/python pipeline.py             # self-checks for chunking, alignment, context-echo stripping
+```
+
+The phone behaviour (chat, player, instant navigation, drafts surviving re-renders) is checked in WebKit with Playwright's iPhone profile; the scripts live outside the repo for now.
+
+## Design notes
 
