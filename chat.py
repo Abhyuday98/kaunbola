@@ -89,11 +89,12 @@ def note_json(root, note):
 
 
 def grep_leg(root, query, note):
-    """(note_id, turn) for every turn containing an exact name/number token of the query; a speaker's name hits all their turns."""
+    """(note_id, turn) for every turn containing a rare exact token of the query (a name, a number); a speaker's name hits all their turns.
+    A token found in more than 2% of all turns (sentence starters like "What", "Kya") carries no information and is ignored."""
     toks = {t.lower() for t in KEY_TOKEN.findall(query)}
-    hits = set()
     if not toks:
-        return hits
+        return set()
+    per_tok, total = {t: set() for t in toks}, 0
     for d in ([root / note] if note else sorted(root.iterdir())):
         if not (d.is_dir() and NOTE_ID.match(d.name)):
             continue
@@ -102,9 +103,19 @@ def grep_leg(root, query, note):
             continue
         names = {(v or "").lower(): k for k, v in (t.get("speakers") or {}).items() if v}
         for i, s in enumerate(t.get("segments", [])):
+            total += 1
             hay = " ".join((s.get("hinglish") or "", s.get("text") or "", s.get("english") or "")).lower()
-            if any(tok in hay or names.get(tok) == s["speaker"] for tok in toks):
-                hits.add((d.name, i))
+            for tok in toks:
+                if names.get(tok) == s["speaker"]:
+                    per_tok[tok].add((d.name, i, True))
+                elif tok in hay:
+                    per_tok[tok].add((d.name, i, False))
+    hits = set()
+    for tok, found in per_tok.items():
+        if sum(1 for h in found if not h[2]) <= max(20, total * 0.02):  # text hits of a common word are noise; speaker-name hits always count
+            hits |= {(n, i) for n, i, _ in found}
+        else:
+            hits |= {(n, i) for n, i, by_name in found if by_name}
     return hits
 
 
@@ -144,7 +155,10 @@ def retrieve(root, query, note=None, embed=embed, top_k=TOP_K):
     for r in ranges:
         counts.setdefault(r["note"], len((note_json(root, r["note"]) or {}).get("segments", [])))
         r["first"], r["last"] = max(0, r["first"] - PAD), min(counts[r["note"]] - 1, r["last"] + PAD)
-    return sorted(_merge(ranges), key=lambda r: (r["note"], r["first"]))
+    merged = sorted(_merge(ranges), key=lambda r: -r["score"])
+    while merged and range_chars(root, merged) > CONTEXT_CHARS:  # over the cap: lowest scores go first
+        merged.pop()
+    return sorted(merged, key=lambda r: (r["note"], r["first"]))
 
 
 def range_chars(root, ranges):

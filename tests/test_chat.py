@@ -65,6 +65,17 @@ def test_retrieve_cross_script_and_grep():
     assert hits == {(d.name, t) for t in range(0, 30, 2)}
 
 
+def test_grep_ignores_common_words_and_retrieve_caps_by_score():
+    import chat
+    root = Path(tempfile.mkdtemp())
+    segs = [{**x, "hinglish": "What about " + x["hinglish"]} for x in SEGS * 40]   # "what" in every turn of a 1200-turn note
+    d = make_note(root, "2026-10-09-100000-one", segs); chat.index_note(d, embed=fake_embed)
+    hits = chat.grep_leg(root, "What did Priya say about the budget", None)
+    assert hits and all(t % 2 == 0 for _, t in hits)                                 # "What" is everywhere: ignored; Priya's turns only
+    r = chat.retrieve(root, "What did Priya say about the budget", embed=fake_embed, top_k=200)
+    assert chat.range_chars(root, r) <= chat.CONTEXT_CHARS and r
+
+
 def test_query_text_expands_followups():
     import chat
     assert chat.query_text("and what did she say after that?", "what did Priya decide about the budget").startswith("what did Priya decide")

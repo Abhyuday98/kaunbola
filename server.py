@@ -6,12 +6,14 @@ The owner's notes live in NOTES_DIR; every other login gets its own root under U
 voice memory and settings, and a note id only ever resolves inside the requester's root.
 """
 import datetime, hashlib, mimetypes, os, queue, re, shutil, subprocess, threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+import chat
 import pipeline as pl
 
 app = FastAPI()
@@ -22,6 +24,7 @@ OWNER_LOGIN = os.environ.get("OWNER_LOGIN", "").strip().lower()
 USERS = Path(os.environ.get("USERS_DIR", str(pl.NOTES.parent / "audio-users"))).expanduser()
 UNSAFE = re.compile(r"[^A-Za-z0-9@._-]")
 THEMES = ("system", "pink")
+POOL = ThreadPoolExecutor(max_workers=2)  # chat answers and index backfills: network calls, never the GPU
 
 
 def worker():
@@ -30,7 +33,11 @@ def worker():
         try:
             pl.run(nd)
         except Exception:
-            pass  # status.json already carries the error
+            continue  # status.json already carries the error
+        try:
+            chat.index_note(nd)
+        except Exception as e:
+            print(f"index failed for {nd.name}: {e}")
 
 
 def login_of(request):
@@ -65,11 +72,15 @@ def hash_file(p):
     return h.hexdigest()
 
 
-NOTE_ID = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}-")  # note ids are dated; anything else in a root (chats/, speakers.json) is not a note
+NOTE_ID = chat.NOTE_ID  # note ids are dated; anything else in a root (chats/, speakers.json) is not a note
 
 
 def note_dirs(root):
     return [d for d in sorted(root.iterdir(), reverse=True) if d.is_dir() and NOTE_ID.match(d.name)]
+
+
+def is_owner(request):
+    return root_for(request) == pl.NOTES
 
 
 def find_by_hash(root, h):
@@ -120,6 +131,8 @@ def startup():
             if src and not meta.get("sha256"):
                 meta["sha256"] = hash_file(src)
                 pl.write_json(d / "meta.json", meta)
+        chat.mark_interrupted(root)
+        POOL.submit(chat.index_missing, root)
 
 
 async def write_body(request, path, mode="wb"):
@@ -306,6 +319,82 @@ def delete_speaker(request: Request, name: str):
             pl.write_json(d / "transcript.json", t)
             pl.write_md(d, t)
     return {"ok": True}
+
+
+# ---------- chat ----------
+def chat_model(request, body):
+    model = (body or {}).get("model") or "local"
+    if model not in chat.MODELS:
+        raise HTTPException(400, "unknown model")
+    if model == "claude" and not is_owner(request):
+        raise HTTPException(403, "Claude is only available to the owner")
+    return model
+
+
+def session_or_404(root, sid):
+    try:
+        return chat.load_session(root, sid)
+    except KeyError:
+        raise HTTPException(404)
+
+
+@app.get("/api/chats")
+def list_chats(request: Request, note: str = None):
+    return chat.list_sessions(root_for(request), note or None)
+
+
+@app.post("/api/chats")
+def create_chat(request: Request, body: dict = None):
+    root = root_for(request)
+    body = body or {}
+    note = body.get("note") or None
+    if note:
+        d = note_dir(root, note)
+        if not (d / "transcript.json").exists():
+            raise HTTPException(409, "not transcribed yet")
+    return chat.new_session(root, note, chat_model(request, body))
+
+
+@app.get("/api/chats/{sid}")
+def get_chat(request: Request, sid: str):
+    return session_or_404(root_for(request), sid)
+
+
+@app.post("/api/chats/{sid}/ask")
+def ask_chat(request: Request, sid: str, body: dict):
+    root = root_for(request)
+    session_or_404(root, sid)
+    if not (body.get("text") or "").strip():
+        raise HTTPException(400, "empty question")
+    model = chat_model(request, body)
+    try:
+        s = chat.queue_question(root, sid, body["text"], model)
+    except ValueError:
+        raise HTTPException(409, "already answering")
+    POOL.submit(chat.answer, root, sid)
+    return s
+
+
+@app.post("/api/chats/{sid}/clear")
+def clear_chat(request: Request, sid: str):
+    root = root_for(request)
+    session_or_404(root, sid)
+    chat.clear_session(root, sid)
+    return {"ok": True}
+
+
+@app.delete("/api/chats/{sid}")
+def delete_chat(request: Request, sid: str):
+    root = root_for(request)
+    session_or_404(root, sid)
+    chat.delete_session(root, sid)
+    return {"ok": True}
+
+
+@app.post("/api/reindex")
+def reindex(request: Request):
+    POOL.submit(chat.index_missing, root_for(request))
+    return {"queued": True}
 
 
 app.mount("/", StaticFiles(directory=str(pl.ROOT / "static"), html=True))
