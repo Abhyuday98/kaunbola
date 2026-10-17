@@ -107,6 +107,20 @@ def test_prompt_stays_under_ctx():
     assert msgs[0]["role"] == "system" and msgs[-1] == {"role": "user", "content": "final question"} and len(msgs) >= 4
 
 
+def test_claude_argv_and_failure():
+    import chat
+    argv = chat.claude_argv("hello")
+    for f in ["-p", "hello", "--output-format", "json", "--setting-sources", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--tools", "--no-session-persistence", "--json-schema"]:
+        assert f in argv, f
+    assert json.loads(argv[argv.index("--json-schema") + 1]) == chat.ANSWER_SCHEMA and ("--model" in argv) == bool(chat.CLAUDE_MODEL)
+    assert chat.flatten([{"role": "system", "content": "S"}, {"role": "user", "content": "ctx"}, {"role": "assistant", "content": "a1"}, {"role": "user", "content": "q"}]) == "User:\nctx\n\nAssistant:\na1\n\nUser:\nq"
+    chat.CLAUDE_BIN = "/nonexistent/claude"
+    try:
+        chat.call_claude([{"role": "user", "content": "q"}]); assert False
+    except (RuntimeError, OSError):
+        pass
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
