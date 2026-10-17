@@ -37,7 +37,7 @@ def chunk_turns(segments, size=CHUNK_CHARS):
                        "speakers": sorted({segments[k]["speaker"] for k in range(i, last + 1)}), "text": "\n".join(parts)})
         if last >= len(segments) - 1:
             break
-        i = last  # overlap by one turn
+        i = last if last > i else last + 1  # overlap by one turn, unless the chunk was a single long turn
     return chunks
 
 

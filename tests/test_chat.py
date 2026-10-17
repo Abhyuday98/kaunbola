@@ -42,6 +42,16 @@ def test_chunk_turns_overlap_and_size():
     assert chat.chunk_turns([SEGS[0]])[0]["last"] == 0 and chat.chunk_turns([]) == []
 
 
+def test_chunk_turns_terminates_on_long_turn():
+    import chat, threading
+    segs = [dict(SEGS[0], hinglish="x " * 700), dict(SEGS[1], hinglish="short"), dict(SEGS[2], hinglish="y " * 700), dict(SEGS[3], hinglish="end")]
+    out = []
+    th = threading.Thread(target=lambda: out.append(chat.chunk_turns(segs, size=600)), daemon=True); th.start(); th.join(2)
+    assert not th.is_alive(), "chunk_turns hangs on a single turn longer than the chunk size"
+    firsts = [c["first"] for c in out[0]]
+    assert firsts == sorted(set(firsts)) and out[0][-1]["last"] == 3
+
+
 def test_index_note_roundtrip_and_skip():
     import chat
     root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS)
