@@ -3,7 +3,7 @@
 Nothing here touches the GPU: embeddings come from the local Ollama (bge-m3), answers from the pipeline's Ollama or from
 `claude -p` on this machine. Every function takes the requester's root, so a guest's notes never mix with the owner's.
 """
-import hashlib, json, os, re, shutil, subprocess, time, uuid
+import functools, hashlib, json, os, re, shutil, subprocess, time, uuid
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +13,8 @@ import pipeline as pl
 EMBED_URL = os.environ.get("EMBED_URL", "http://127.0.0.1:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 CHUNK_CHARS = 600
-CONTEXT_CHARS = 17000
+RETRIEVE_CHARS = 13000  # one question's worth of turns
+CONTEXT_CHARS = 26000   # a session keeps about two questions' worth; older ranges drop from the front
 HISTORY_CHARS = 8000
 TOP_K = 24
 PAD = 2
@@ -60,11 +61,12 @@ def index_note(note_dir, embed=embed):
     if t is None:
         return 0
     chunks = chunk_turns(t.get("segments", []))
-    h = hashlib.sha1("\n\n".join(c["text"] for c in chunks).encode()).hexdigest()
+    title = t.get("title") or note_dir.name
+    h = hashlib.sha1((title + "\n\n" + "\n\n".join(c["text"] for c in chunks)).encode()).hexdigest()
     old = pl.read_json(note_dir / "chunks.json", {})
     if old.get("hash") == h and (note_dir / "chunks.npy").exists():
         return len(old["chunks"])
-    m = embed([c["text"] for c in chunks]) if chunks else np.zeros((0, 1024), dtype=np.float32)
+    m = embed([title + "\n" + c["text"] for c in chunks]) if chunks else np.zeros((0, 1024), dtype=np.float32)  # the title carries date/topic words
     np.save(note_dir / "chunks.npy", m)
     pl.write_json(note_dir / "chunks.json", {"hash": h, "chunks": chunks})
     return len(chunks)
@@ -84,39 +86,53 @@ KEY_TOKEN = re.compile(r"\b(?:[A-Z][a-z]+|\d[\d:/.-]*\d|\d)\b")
 FOLLOW = re.compile(r"^(and|or|but|what about|aur|phir|uske|uska|usne|wo|woh|she|he|they|it|that|then|also)\b", re.I)
 
 
+@functools.lru_cache(maxsize=64)
+def _note_json(path, mtime):
+    return pl.read_json(Path(path), None)
+
+
 def note_json(root, note):
-    return pl.read_json(root / note / "transcript.json", None)
+    p = root / note / "transcript.json"
+    try:
+        return _note_json(str(p), p.stat().st_mtime_ns)
+    except FileNotFoundError:
+        return None
+
+
+def note_dirs(root, note=None):
+    return [root / note] if note else [d for d in sorted(root.iterdir()) if d.is_dir() and NOTE_ID.match(d.name)]
 
 
 def grep_leg(root, query, note):
-    """(note_id, turn) for every turn containing a rare exact token of the query (a name, a number); a speaker's name hits all their turns.
+    """(note_id, turn) for every turn whose text contains a rare exact token of the query (a number, an uncommon word).
     A token found in more than 2% of all turns (sentence starters like "What", "Kya") carries no information and is ignored."""
     toks = {t.lower() for t in KEY_TOKEN.findall(query)}
     if not toks:
         return set()
     per_tok, total = {t: set() for t in toks}, 0
-    for d in ([root / note] if note else sorted(root.iterdir())):
-        if not (d.is_dir() and NOTE_ID.match(d.name)):
-            continue
+    for d in note_dirs(root, note):
         t = note_json(root, d.name)
         if not t:
             continue
-        names = {(v or "").lower(): k for k, v in (t.get("speakers") or {}).items() if v}
         for i, s in enumerate(t.get("segments", [])):
             total += 1
             hay = " ".join((s.get("hinglish") or "", s.get("text") or "", s.get("english") or "")).lower()
             for tok in toks:
-                if names.get(tok) == s["speaker"]:
-                    per_tok[tok].add((d.name, i, True))
-                elif tok in hay:
-                    per_tok[tok].add((d.name, i, False))
-    hits = set()
-    for tok, found in per_tok.items():
-        if sum(1 for h in found if not h[2]) <= max(20, total * 0.02):  # text hits of a common word are noise; speaker-name hits always count
-            hits |= {(n, i) for n, i, _ in found}
-        else:
-            hits |= {(n, i) for n, i, by_name in found if by_name}
-    return hits
+                if tok in hay:
+                    per_tok[tok].add((d.name, i))
+    return {h for found in per_tok.values() if len(found) <= max(20, total * 0.02) for h in found}
+
+
+def named_speakers(root, query, note):
+    """{(note_id, speaker_key)} for every speaker whose name appears in the question. Used to boost their chunks, not to add all their turns."""
+    toks = {t.lower() for t in KEY_TOKEN.findall(query)}
+    out = set()
+    for d in note_dirs(root, note):
+        t = note_json(root, d.name)
+        for k, v in ((t or {}).get("speakers") or {}).items():
+            if v and v.lower() in toks:
+                out.add((d.name, k))
+    return out
 
 
 def query_text(question, prev_question):
@@ -140,29 +156,38 @@ def _merge(ranges):
 
 
 def retrieve(root, query, note=None, embed=embed, top_k=TOP_K):
+    """Ranges of turns for one question: cosine top-k (chunks of a speaker named in the question get +0.15), plus rare exact-token hits,
+    padded by PAD turns, merged, and cut to RETRIEVE_CHARS keeping the best scores."""
     index = load_index(root, note)
+    named = named_speakers(root, query, note)
     scored = []
-    if index and any(m.shape[0] for _, _, m in index):
+    if any(m.shape[0] for _, _, m in index):
         q = embed([query])[0]
         for nid, chunks, m in index:
             if m.shape[0]:
-                for i, sc in zip(range(m.shape[0]), m @ q):
-                    scored.append((float(sc), nid, chunks[i]["first"], chunks[i]["last"]))
+                for i, sc in enumerate(m @ q):
+                    boost = 0.15 if any((nid, sp) in named for sp in chunks[i]["speakers"]) else 0.0
+                    scored.append((float(sc) + boost, nid, chunks[i]["first"], chunks[i]["last"]))
     scored.sort(reverse=True)
     ranges = [{"note": nid, "first": f, "last": l, "score": sc} for sc, nid, f, l in scored[:top_k]]
     ranges += [{"note": nid, "first": t, "last": t, "score": 0.5} for nid, t in grep_leg(root, query, note)]
-    counts = {}
     for r in ranges:
-        counts.setdefault(r["note"], len((note_json(root, r["note"]) or {}).get("segments", [])))
-        r["first"], r["last"] = max(0, r["first"] - PAD), min(counts[r["note"]] - 1, r["last"] + PAD)
-    merged = sorted(_merge(ranges), key=lambda r: -r["score"])
-    while merged and range_chars(root, merged) > CONTEXT_CHARS:  # over the cap: lowest scores go first
-        merged.pop()
-    return sorted(merged, key=lambda r: (r["note"], r["first"]))
+        n = len((note_json(root, r["note"]) or {}).get("segments", []))
+        r["first"], r["last"] = max(0, r["first"] - PAD), min(n - 1, r["last"] + PAD)
+    kept, size = [], 0
+    for r in sorted(_merge(ranges), key=lambda r: -r["score"]):  # best first until the budget is spent
+        c = range_chars(root, [r])
+        if size + c <= RETRIEVE_CHARS:
+            kept.append(r); size += c
+    return sorted(kept, key=lambda r: (r["note"], r["first"]))
 
 
 def range_chars(root, ranges):
-    return sum(len(render_range(root, r["note"], "n1", r["first"], r["last"])) + 1 for r in ranges)
+    total = 0
+    for r in ranges:
+        segs = (note_json(root, r["note"]) or {}).get("segments", [])
+        total += sum(len(turn_text(s)) + 32 for s in segs[r["first"]:r["last"] + 1])  # 32 ≈ "[n1#123] HH:MM:SS Name: " + newline
+    return total
 
 
 def fits_whole(root, note):
