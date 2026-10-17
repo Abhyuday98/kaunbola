@@ -55,6 +55,33 @@ def test_index_note_roundtrip_and_skip():
     assert chat.index_note(empty, embed=fake_embed) == 0 and chat.load_index(root, empty.name)[0][2].shape[0] == 0
 
 
+def test_retrieve_cross_script_and_grep():
+    import chat
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS); chat.index_note(d, embed=fake_embed)
+    r1 = chat.retrieve(root, "budget line pe kya baat hui", embed=fake_embed, top_k=2)
+    assert any(x["first"] <= 7 <= x["last"] for x in r1), r1            # turn 7 is the budget turn
+    assert all(x["first"] >= 0 and x["last"] < len(SEGS) for x in r1)
+    hits = chat.grep_leg(root, "What did Priya say at 00:40", None)      # "Priya" names SPEAKER_00 -> every even turn; "What" and "00:40" match no text
+    assert hits == {(d.name, t) for t in range(0, 30, 2)}
+
+
+def test_query_text_expands_followups():
+    import chat
+    assert chat.query_text("and what did she say after that?", "what did Priya decide about the budget").startswith("what did Priya decide")
+    assert chat.query_text("Kal ki meeting mein Rohan ne scope ke baare mein kya bola?", "x") == "Kal ki meeting mein Rohan ne scope ke baare mein kya bola?"
+
+
+def test_union_context_caps_from_front():
+    import chat
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS * 40)  # 1200 turns
+    ctx = chat.union_context([], [{"note": d.name, "first": 0, "last": 3, "score": 1}], root)
+    ctx = chat.union_context(ctx, [{"note": d.name, "first": 2, "last": 5, "score": 1}, {"note": d.name, "first": 20, "last": 22, "score": 1}], root)
+    assert [(r["first"], r["last"]) for r in ctx] == [(0, 5), (20, 22)]
+    big = [{"note": d.name, "first": i, "last": i, "score": 1} for i in range(1200)]  # far over CONTEXT_CHARS once rendered
+    ctx2 = chat.union_context(ctx, big, root)
+    assert chat.range_chars(root, ctx2) <= chat.CONTEXT_CHARS and (ctx2[0]["first"], ctx2[0]["last"]) != (0, 5)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
