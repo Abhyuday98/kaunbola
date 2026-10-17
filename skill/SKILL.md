@@ -19,6 +19,7 @@ CLI="$TURNWISE/.venv/bin/python $TURNWISE/cli.py"
 $CLI transcribe <file> [title] [--folder F]   # uploads, waits, prints transcript.md. If the same file (sha256) was done before it says so and prints it.
 $CLI import <dir> [--min-seconds 60]          # queue every recording under dir (folder = first sub-directory); skips already-transcribed files; returns immediately
 $CLI list [n]                                 # id, status, duration, folder, title, speakers — newest first
+$CLI ask <question> [--note <id>] [--model local|claude]   # answers from the transcripts (all notes, or one) and lists the turns it used as "[k] title HH:MM:SS Speaker: words"
 $CLI search <words>                           # grep across all transcript.md, prints "<id>:<line>"
 $CLI show <id>                                # prints transcript.md
 $CLI speakers                                 # known voices (named by the user in the web app)
@@ -34,8 +35,9 @@ Long files take time (~9 min per 30 min of audio); `transcribe` prints progress 
 `transcript.json`: `{id, title, created, duration, folder, summary, action_items: [{owner, item}], speakers: {SPEAKER_00: "Name"|null}, segments: [{start, end, speaker, text (raw ASR), hinglish, english, lang}], warning?}`.
 
 ## Answering questions about meetings
-1. `search` for the topic / person, then `show` the matching ids (or read `~/notes/audio/<id>/transcript.md` directly). Summaries and action items are at the top of each file.
-2. Quote speakers by name; unnamed ones appear as "Speaker 1/2…". The user names voices in the web app and names propagate to future recordings automatically.
+1. `ask "<the question>"` (add `--note <id>` to restrict it to one recording). It retrieves the relevant turns, answers only from them, and prints the turns it used, so you can quote them. The local model answers by default; `--model claude` is the owner's choice, not yours.
+2. For reading a whole meeting, `search` for the topic / person, then `show` the matching ids (or read `~/notes/audio/<id>/transcript.md` directly). Summaries and action items are at the top of each file.
+3. Quote speakers by name; unnamed ones appear as "Speaker 1/2…". The user names voices in the web app and names propagate to future recordings automatically.
 
 ## Speaker maintenance (`notes_tool.py`, run with the repo `.venv`)
 - If a recording comes with a WebVTT subtitle file carrying speaker names (video-call platforms produce one for a call), `python notes_tool.py from-vtt <note_id> <file.vtt> --apply` names the note's speakers from it and stores their voices as known speakers. Best way to seed voice memory. (Useless when several people share one device: the platform then credits everything to that one account.)

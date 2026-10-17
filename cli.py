@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """turnwise CLI (stdlib only). transcribe goes through the server; list/search/show read the notes dir."""
-import hashlib, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import hashlib, json, os, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 AUDIO_EXT = {".m4a", ".mp3", ".wav", ".ogg", ".opus", ".webm", ".mp4", ".mkv", ".aac", ".flac", ".mov"}
 
 NOTES = Path(os.environ.get("NOTES_DIR", "~/notes/audio")).expanduser()
 API = os.environ.get("AUDIO_NOTES_URL", "http://127.0.0.1:8470")
+NOTE_ID = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}-")  # note dirs are dated; chats/ is not a note
 
 
 def api(method, path, data=None, headers=None):
@@ -84,7 +85,7 @@ def import_dir(args):
 
 def list_notes(args):
     n = int(args[0]) if args else 30
-    dirs = [d for d in NOTES.iterdir() if d.is_dir()]
+    dirs = [d for d in NOTES.iterdir() if d.is_dir() and NOTE_ID.match(d.name)]
     for d in sorted(dirs, key=lambda d: load(d / "meta.json").get("created", ""), reverse=True)[:n]:
         t, st = load(d / "transcript.json"), load(d / "status.json")
         meta = load(d / "meta.json")
@@ -112,6 +113,38 @@ def speakers(args):
         print(f"{name}\t{len(rec['embeddings'])} samples")
 
 
+def ask(args):
+    """ask <question> [--note <id>] [--model local|claude]: answers from the transcripts, with the turns it used."""
+    note, model = opt(args, "--note"), opt(args, "--model") or "local"
+    q = " ".join(args).strip()
+    if not q:
+        sys.exit("usage: cli.py ask <question> [--note <id>] [--model local|claude]")
+    hdr = {"Content-Type": "application/json"}
+    try:
+        s = api("POST", "/api/chats", json.dumps({"note": note or None, "model": model}).encode(), hdr)
+        api("POST", f"/api/chats/{s['id']}/ask", json.dumps({"text": q, "model": model}).encode(), hdr)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"error {e.code}: {e.read().decode()[:200]}")
+    while True:
+        s = api("GET", f"/api/chats/{s['id']}")
+        m = s["messages"][-1]
+        if not m.get("pending"):
+            break
+        print(f"  {m.get('detail', '')}", file=sys.stderr)
+        time.sleep(2)
+    if m.get("error"):
+        sys.exit(f"error: {m['error']}")
+    print(m["text"])
+    if m.get("sources"):
+        print()
+        for k, x in enumerate(m["sources"], 1):
+            print(f"[{k}] {x['title']} {time.strftime('%H:%M:%S', time.gmtime(x['start']))} {x['speaker']}: {x['hinglish']}")
+
+
+def reindex(args):
+    print("queued" if api("POST", "/api/reindex").get("queued") else "not queued")
+
+
 def load(p):
     try:
         return json.loads(Path(p).read_text())
@@ -120,7 +153,7 @@ def load(p):
 
 
 if __name__ == "__main__":
-    cmds = {"transcribe": transcribe, "import": import_dir, "list": list_notes, "search": search, "show": show, "speakers": speakers}
+    cmds = {"transcribe": transcribe, "import": import_dir, "list": list_notes, "search": search, "show": show, "speakers": speakers, "ask": ask, "reindex": reindex}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
-        sys.exit("usage: cli.py transcribe <file> [title] [--folder F] | import <dir> [--min-seconds 60] | list [n] | search <query> | show <id> | speakers")
+        sys.exit("usage: cli.py transcribe <file> [title] [--folder F] | import <dir> [--min-seconds 60] | list [n] | search <query> | show <id> | speakers | ask <question> [--note <id>] [--model local|claude] | reindex")
     cmds[sys.argv[1]](sys.argv[2:])

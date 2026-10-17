@@ -23,6 +23,7 @@ A turn in the transcript looks like this:
 - **Hinglish the way people type it**, with an English translation per turn and the raw recognition kept alongside.
 - **Title, summary and action items** generated from the content.
 - **Folders, a date view, and dedupe by content hash**: re-sending a file you already transcribed just opens it, whatever it is called.
+- **A chat that answers from the recordings** and shows the moments it drew on: tap one and it plays, with the words on screen. Across everything or inside one note, with sessions kept. Answered by the local model or, for the owner, by Claude Code on their own subscription.
 - **A Claude Code skill** so that "what did we decide about the draft last week?" is answered from the transcripts.
 - **One engine** behind the web app, the CLI and the bulk importer, so every path produces the same note.
 - **Runs as a service**: starts on boot, frees the GPU when idle, resumes interrupted jobs after a restart.
@@ -61,7 +62,7 @@ bash scripts/setup.sh        # venv, pinned requirements, DeepFilterNet binary, 
 Then:
 
 1. Accept the model terms at [huggingface.co/pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), create a read token, and paste it into `~/.config/audio-notes/env`. Without it you still get a transcript, with one speaker.
-2. `ollama pull qwen3.5:9b` (or set `LLM_MODEL` to what you have).
+2. `ollama pull qwen3.5:9b` (or set `LLM_MODEL` to what you have) and `ollama pull bge-m3` for the chat's retrieval.
 3. `systemctl --user restart audio-notes`, then `loginctl enable-linger $USER` so it starts on boot.
 4. To reach it from your phone, serve it over Tailscale; the browser microphone needs HTTPS:
 
@@ -94,8 +95,11 @@ The script binds Ollama to that one address only. A 35B mixture-of-experts model
 ```bash
 .venv/bin/python cli.py transcribe meeting.m4a [title] [--folder F]   # waits and prints the markdown; a known file just prints it
 .venv/bin/python cli.py import ~/recordings [--min-seconds 60]       # queue a whole tree; folder = first sub-directory
-.venv/bin/python cli.py list | search <words> | show <id> | speakers
+.venv/bin/python cli.py ask "what did we decide about the draft?" [--note <id>] [--model local|claude]
+.venv/bin/python cli.py list | search <words> | show <id> | speakers | reindex
 ```
+
+**Asking questions.** The Ask button on the home screen (or "Ask about this recording" in a note's menu) opens a chat. Each answer is written only from transcript turns and lists them underneath: who, which recording, when, the Hinglish and the English. Tap one to play that moment in a small player that shows the words turn by turn and links into the full note. Chats are kept as sessions. How it works: every note gets an index of its turns embedded with `bge-m3` through Ollama (`EMBED_URL`, `EMBED_MODEL`); a question retrieves the closest chunks plus exact-name hits, and the model gets those turns with references it must cite; references it invents are dropped before you see them. The local model is the same one that writes the Hinglish. The owner can switch to Claude, which runs the Claude Code CLI in headless mode on the server with `--setting-sources ""` and no MCP servers, so each question costs a few thousand tokens of overhead rather than the account's whole connector catalogue (`CLAUDE_BIN`, `CLAUDE_MODEL`).
 
 **Claude Code.** Copy `skill/` to `~/.claude/skills/turnwise/` and set the path at the top of it. Claude then transcribes files and answers questions about past meetings through the CLI, never touching the GPU itself.
 
@@ -138,7 +142,8 @@ Things I would do next, roughly in the order they would help:
 - **Local LLM fallback** when the remote Ollama is unreachable, so the note still gets its Hinglish lines.
 - **Subtitle auto-import**: drop a `.vtt` next to the recording and have names seeded without a command.
 - **Second worker** on a second GPU for bulk imports.
-- **Semantic search** over the notes (an embedding model is already one `ollama pull` away) instead of grep.
+- **Streaming answers** in the chat, token by token, instead of waiting for the whole reply.
+- **Word-level subtitles** in the player: the aligner already has word times; storing them would make the highlight follow each word.
 - **Live transcription** while recording, for the cases where reading along matters more than accuracy.
 - **Auth** in front of the app, so it can live beyond a tailnet.
 
