@@ -5,3 +5,4 @@ __pycache__/
 .playwright-mcp/
 .*.log
 .superpowers/
+docs/superpowers/plans/
