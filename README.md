@@ -174,5 +174,3 @@ Code is MIT. The models have their own terms: pyannote community-1 is CC-BY-4.0 
 
 The phone behaviour (chat, player, instant navigation, drafts surviving re-renders) is checked in WebKit with Playwright's iPhone profile; the scripts live outside the repo for now.
 
-## Design notes
-
