@@ -149,7 +149,11 @@ const dur = s => s==null ? '' : (s>=3600 ? Math.round(s/60)+' min' : Math.max(1,
 const fmtDate = iso => iso ? new Date(iso).toLocaleString([], {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}) : '';
 const dayLabel = iso => { const d = new Date(iso), t = new Date(); const diff = Math.round((new Date(t.getFullYear(),t.getMonth(),t.getDate()) - new Date(d.getFullYear(),d.getMonth(),d.getDate())) / 864e5);
   return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString([], {weekday:'short', day:'numeric', month:'short', year: d.getFullYear() === t.getFullYear() ? undefined : 'numeric'}); };
-const api = async (path, opt={}) => { const r = await fetch('/api'+path, opt); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+class StaleError extends Error {}  // the user moved to another screen while this request was in flight
+let renderSeq = 0;
+const api = async (path, opt={}) => {  // 20 s cap: a stalled tunnel becomes the retry banner, never a hang
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 20000), seq = renderSeq;
+  try { const r = await fetch('/api'+path, {...opt, signal: c.signal}); if (seq !== renderSeq) throw new StaleError('stale'); if (!r.ok) throw new Error(await r.text()); return r.json(); } finally { clearTimeout(t); } };
 const json = (method, body) => ({method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
 const spkName = (note, k) => note.speakers?.[k] || (k.startsWith('SPEAKER_') ? 'Speaker ' + (parseInt(k.split('_').pop()) + 1) : k);
 const STATES = {uploading:'Uploading', queued:'Queued', recording:'Recording', convert:'Converting', denoise:'Removing noise', diarize:'Finding speakers', transcribe:'Transcribing', translate:'Hinglish + English', summarize:'Summary + title', done:'', error:'Failed'};
@@ -426,17 +430,23 @@ async function render(refresh = false) {
   if (dlg.open && !refresh) { dlg.close(); dlg.innerHTML = ''; }
   if (dlg.open) { pollTimer = setTimeout(() => render(true), 3000); return; }  // don't repaint under an open dialog
   const sameRoute = location.hash === lastRoute;
-  const y = refresh || sameRoute ? window.scrollY : 0;  // only a real navigation starts at the top
+  if (!sameRoute) { renderSeq++; state.sought = false; (state.scroll = state.scroll || {})[lastRoute] = window.scrollY; }
+  const y = refresh || sameRoute ? window.scrollY : (state.scroll?.[location.hash] ?? 0);  // a route you come back to keeps its scroll
   lastRoute = location.hash;
   const [p, id] = route();
-  if (!sameRoute) state.sought = false;
   if (p !== 'chat' && window.player) player.close();
+  if (!refresh && !sameRoute) {  // paint at once from what this route showed last time (or a placeholder); the data arrives after
+    app.innerHTML = state.html?.[location.hash] || `<div class="nav">${back('/', 'Notes')}</div><div class="empty">Loading…</div>`;
+    window.scrollTo(0, y);
+  }
   try {
     if (p === 'note') await viewNote(id); else if (p === 'record') await viewRecord(); else if (p === 'settings') await viewSettings();
     else if (p === 'chats') await viewChats(id); else if (p === 'chat') await viewChat(id); else await viewList();
     retryDelay = 2000;
+    (state.html = state.html || {})[location.hash] = app.innerHTML;
   } catch (e) {
-    const offline = e instanceof TypeError;  // fetch failed: no network / tunnel not up yet (Safari says "Load failed")
+    if (e instanceof StaleError) return;  // a newer screen owns the page now
+    const offline = e instanceof TypeError || e.name === 'AbortError';  // fetch failed or timed out: no network / tunnel not up yet (Safari says "Load failed")
     app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div><div class="banner err">${offline ? 'Can\u2019t reach the server. Retrying\u2026' : esc(e.message)}</div>`;
     if (offline) { retryTimer = setTimeout(() => render(true), retryDelay); retryDelay = Math.min(retryDelay * 2, 15000); }
   }
