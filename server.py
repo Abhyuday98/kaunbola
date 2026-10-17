@@ -65,8 +65,11 @@ def hash_file(p):
     return h.hexdigest()
 
 
+NOTE_ID = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{6}-")  # note ids are dated; anything else in a root (chats/, speakers.json) is not a note
+
+
 def note_dirs(root):
-    return [d for d in sorted(root.iterdir(), reverse=True) if d.is_dir()]
+    return [d for d in sorted(root.iterdir(), reverse=True) if d.is_dir() and NOTE_ID.match(d.name)]
 
 
 def find_by_hash(root, h):
