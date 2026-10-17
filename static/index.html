@@ -370,7 +370,7 @@ async function viewChat(sid) {
       <div class="txt">${esc(x.hinglish)}</div>${x.english && x.english !== x.hinglish ? `<div class="en">${esc(x.english)}</div>` : ''}</div></div>`;
   let k = 0;
   const msg = m => m.role === 'user' ? `<div class="msg user">${esc(m.text)}</div>`
-    : m.pending ? `<div class="msg bot" aria-live="polite">Thinking… <span class="meta">${esc(m.detail || '')} · ${elapsed(Date.now() / 1000 - m.ts)}</span></div>`
+    : m.pending ? `<div class="msg bot" aria-live="polite">${m.model === 'claude' ? 'Claude' : 'Local model'} is thinking… <span class="meta">${esc(m.detail || '')} · ${elapsed(Date.now() / 1000 - m.ts)}</span></div>`
     : m.error ? `<div class="banner err">${esc(m.error)}</div>`
     : `<div class="msg bot">${cites(md(m.text))}${m.sources?.length ? `<div style="margin-top:8px">${m.sources.map(x => src(x, ++k)).join('')}</div>` : ''}<div class="meta">${m.model === 'claude' ? 'Claude' : 'Local model'}</div></div>`;
   app.innerHTML = `<div class="nav">${back('/chats' + (s.note ? '/' + s.note : ''), 'Chats')}<button id="menu" aria-label="More actions" style="font-size:24px;line-height:1">⋯</button></div>
@@ -379,9 +379,12 @@ async function viewChat(sid) {
     <div id="msgs">${s.messages.map(msg).join('') || '<div class="empty">Ask anything about ' + (s.note ? 'this recording' : 'your recordings') + '.</div>'}</div>
     <form class="bar askbar" id="askform"><input id="askin" type="text" placeholder="Ask a question" autocomplete="off" aria-label="Question" ${busy ? 'disabled' : ''}><button class="btn prominent" type="submit" ${busy ? 'disabled' : ''}>Send</button></form>`;
   k = 0;
-  app.querySelectorAll('.seg button').forEach(b => b.onclick = () => { (state.model = state.model || {})[sid] = b.dataset.model; render(true); });
+  app.querySelectorAll('.seg button').forEach(b => b.onclick = () => {  // flips at once; the choice travels with the next question
+    (state.model = state.model || {})[sid] = b.dataset.model;
+    app.querySelectorAll('.seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); });
   $('#askform').onsubmit = async e => { e.preventDefault(); const text = $('#askin').value.trim(); if (!text || busy) return;
-    try { await api(`/chats/${sid}/ask`, json('POST', {text, model})); } catch (err) { ui.alert('Could not ask', err.message); return; }
+    const chosen = state.model?.[sid] || model;
+    try { await api(`/chats/${sid}/ask`, json('POST', {text, model: chosen})); } catch (err) { ui.alert('Could not ask', err.message); return; }
     state.scrollBottom = true; render(true); };
   $('#menu').onclick = async () => {
     const c = await ui.sheet(s.title, [{label: 'New chat', value: 'new'}, {label: 'Clear messages', value: 'clear'}, {label: 'Delete chat', value: 'delete', destructive: true}]);
