@@ -121,6 +121,31 @@ def test_claude_argv_and_failure():
         pass
 
 
+def test_session_roundtrip_and_answer():
+    import chat
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS); chat.index_note(d, embed=fake_embed)
+    s = chat.new_session(root, None, "local")
+    assert chat.list_sessions(root)[0]["id"] == s["id"] and chat.list_sessions(root, note="x") == []
+    s = chat.queue_question(root, s["id"], "Budget line pe kya baat hui?", "local")
+    assert s["title"] == "Budget line pe kya baat hui?" and chat.pending(s)
+    try:
+        chat.queue_question(root, s["id"], "again", "local"); assert False
+    except ValueError:
+        pass
+    fake = lambda msgs: {"answer": "Budget pe baat hui [n1#7]. Not recorded [n1#500].", "sources": [{"ref": "n1#7"}, {"ref": "n1#500"}]}
+    s = chat.answer(root, s["id"], embed=fake_embed, models={"local": fake})
+    m = s["messages"][-1]
+    assert not m["pending"] and m["text"] == "Budget pe baat hui [1]. Not recorded." and [x["turn"] for x in m["sources"]] == [7]
+    assert m["sources"][0]["title"] == "A note" and s["context"] and s["aliases"] == {"n1": d.name}
+    boom = lambda msgs: (_ for _ in ()).throw(RuntimeError("no model"))
+    s = chat.queue_question(root, s["id"], "and after that?", "local"); s = chat.answer(root, s["id"], embed=fake_embed, models={"local": boom})
+    assert s["messages"][-1]["error"].startswith("RuntimeError") and not chat.pending(s)
+    s = chat.queue_question(root, s["id"], "x", "local"); chat.mark_interrupted(root)
+    assert chat.load_session(root, s["id"])["messages"][-1]["error"] == "interrupted by a restart"
+    chat.clear_session(root, s["id"]); assert chat.load_session(root, s["id"])["messages"] == []
+    chat.delete_session(root, s["id"]); assert chat.list_sessions(root) == []
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
