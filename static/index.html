@@ -59,7 +59,7 @@ a.btn,a.back{text-decoration:none}
 .bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;gap:12px;justify-content:center;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:.5px solid var(--separator)}
 .seg{display:flex;background:var(--fill);border-radius:9px;padding:2px;margin:12px 0}
 .seg button{flex:1;min-height:32px;border-radius:7px;font-size:13px;font-weight:500;color:var(--label)}
-.seg button.on{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg button.on{background:var(--tint);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .turn{padding:10px 16px;cursor:pointer}
 .turn+.turn{border-top:.5px solid var(--separator)}
 .turn.playing{background:var(--fill)}
@@ -388,7 +388,8 @@ async function viewChat(sid) {
     app.querySelectorAll('.seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); });
   $('#askform').onsubmit = async e => { e.preventDefault(); const text = $('#askin').value.trim(); if (!text || busy) return;
     const chosen = state.model?.[sid] || model;
-    try { await api(`/chats/${sid}/ask`, json('POST', {text, model: chosen})); } catch (err) { ui.alert('Could not ask', err.message); return; }
+    try { await api(`/chats/${sid}/ask`, json('POST', {text, model: chosen})); } catch (err) { if (!(err instanceof StaleError)) ui.alert('Could not ask', err.message); return; }
+    $('#askin').value = '';  // sent: the draft-preservation must not bring it back
     state.scrollBottom = true; render(true); };
   $('#menu').onclick = async () => {
     const c = await ui.sheet(s.title, [{label: 'New chat', value: 'new'}, {label: 'Clear messages', value: 'clear'}, {label: 'Delete chat', value: 'delete', destructive: true}]);

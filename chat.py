@@ -306,6 +306,8 @@ def validate(answer, refs, root=None, aliases=None):
         if r in refs and r not in kept:
             kept.append(r)
     text = str(answer.get("answer") or "")
+    if "\\n" in text and "\n" not in text:  # the model escaped its newlines inside the JSON string
+        text = text.replace("\\n", "\n")
     for r in REF.findall(text):
         if r in refs and r not in kept:
             kept.append(r)

@@ -166,6 +166,8 @@ def test_quotes_become_sources_and_aliases_never_leak():
     assert kept == ["n1#7"] and ans == 'She said "budget line pe baat hui budget line" [1] and moved on.', ans
     ans, kept = chat.validate({"answer": "Nothing here (n2) at all.", "sources": []}, refs, root=root, aliases=aliases)
     assert ans == "Nothing here at all." and kept == []
+    ans, _ = chat.validate({"answer": "For example:\\n\\n- roles\\n- advice", "sources": []}, refs)   # escaped newlines from the model become real ones
+    assert ans == "For example:\n\n- roles\n- advice", repr(ans)
 
 
 def test_prompt_stays_under_ctx():
