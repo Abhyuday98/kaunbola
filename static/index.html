@@ -81,6 +81,22 @@ progress{width:100%;height:6px;accent-color:var(--tint)}
 .toggle:checked{background:var(--green)}
 .toggle::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2);transition:left .15s}
 .toggle:checked::after{left:22px}
+/* chat */
+.msg{margin:10px 0}
+.msg.user{margin-left:auto;width:fit-content;max-width:85%;background:var(--tint);color:#fff;border-radius:18px 18px 4px 18px;padding:10px 14px;white-space:pre-wrap}
+.msg.bot{background:var(--card);border-radius:18px 18px 18px 4px;padding:12px 14px;font-size:16px}
+.msg.bot p{margin:0 0 8px}.msg.bot ul{margin:0 0 8px;padding-left:20px}.msg.bot li{margin:4px 0}
+.msg.bot .meta{font-size:12px;color:var(--secondary);margin-top:6px}
+.cite{font-size:12px;font-weight:600;color:var(--tint);text-decoration:none;padding:0 4px;border-radius:4px;background:var(--fill);min-height:0}
+.src{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:.5px solid var(--separator);margin:0 -4px;padding-left:4px;padding-right:4px;border-radius:8px}
+.src .play{width:36px;height:36px;min-width:36px;min-height:36px;border-radius:50%;background:var(--tint);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;font-size:13px;margin-top:2px}
+.src .body{flex:1;min-width:0}
+.src .meta{font-size:12px;color:var(--secondary)}.src .meta b{color:var(--tint)}.src .meta a{color:var(--secondary)}
+.src .txt{font-size:15px;margin-top:2px}.src .en{font-size:13px;color:var(--secondary);margin-top:2px}
+.src.playing,.src.flash{background:var(--fill)}
+.askbar input{flex:1;font:inherit;font-size:17px;background:var(--card);border:.5px solid var(--separator);border-radius:22px;padding:10px 16px;color:var(--label);outline:none;min-width:0;min-height:44px;box-sizing:border-box}
+.askbar input:disabled{opacity:.5}
+.askbar .btn{padding:0 16px;border-radius:22px}
 /* dialogs: iOS-style alert and action sheet */
 dialog{border:0;padding:0;background:transparent;color:var(--label);max-width:none;max-height:none}
 dialog::backdrop{background:var(--dim);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
@@ -195,7 +211,7 @@ async function viewList() {
     <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="Search transcripts" value="${esc(q)}" aria-label="Search transcripts"></label>
     ${q ? '' : `<div class="seg" role="tablist" style="margin-top:0">${[['date','By date'],['folder','By folder']].map(([v,l]) => `<button role="tab" aria-selected="${v===view}" class="${v===view?'on':''}" data-view="${v}">${l}</button>`).join('')}</div>`}
     ${body}
-    <div class="bar"><button class="btn" id="upload" aria-label="Upload a recording"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 20h16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Upload</button>
+    <div class="bar"><a class="btn" href="#/chats" aria-label="Ask about your recordings"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>Ask</a><button class="btn" id="upload" aria-label="Upload a recording"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 20h16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Upload</button>
     <a class="btn record" href="#/record" aria-label="Record a meeting"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 11a7 7 0 0014 0M12 18v4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>Record</a></div>`;
   $('#q').oninput = e => { state.q = e.target.value; clearTimeout(state.qt); state.qt = setTimeout(viewList, 250); };
   if (q) { const i = $('#q'); i.focus(); i.setSelectionRange(q.length, q.length); }
@@ -290,8 +306,9 @@ async function viewNote(id) {
   $('#title').onclick = rename;
   $('#title').onkeydown = e => { if (e.key === 'Enter') rename(); };
   $('#menu').onclick = async () => {
-    const c = await ui.sheet(n.title, [{label: 'Rename', value: 'rename'}, {label: 'Move to folder…', value: 'folder'}, {label: 'Copy markdown', value: 'copy'}, {label: 'Re-transcribe', value: 'retry'}, {label: 'Delete', value: 'delete', destructive: true}]);
-    if (c === 'rename') rename();
+    const c = await ui.sheet(n.title, [{label: 'Ask about this recording', value: 'ask'}, {label: 'Rename', value: 'rename'}, {label: 'Move to folder…', value: 'folder'}, {label: 'Copy markdown', value: 'copy'}, {label: 'Re-transcribe', value: 'retry'}, {label: 'Delete', value: 'delete', destructive: true}]);
+    if (c === 'ask') location.hash = '#/chats/' + id;
+    else if (c === 'rename') rename();
     else if (c === 'folder') { const f = await pickFolder(n.folder); if (f !== null) { await api('/notes/' + id, json('PATCH', {folder: f})); ui.toast(f ? 'Moved to ' + f : 'Removed from folder'); render(); } }
     else if (c === 'copy') { const m = await (await fetch(`/api/notes/${id}/md`)).text(); try { await navigator.clipboard.writeText(m); ui.toast('Markdown copied'); } catch (e) { ui.alert('Could not copy', e.message); } }
     else if (c === 'retry' && await ui.confirm('Re-transcribe?', 'The transcript, summary and speaker labels will be regenerated.', 'Re-transcribe')) { await api(`/notes/${id}/retranscribe`, json('POST', {})); render(); }
@@ -306,6 +323,60 @@ async function viewNote(id) {
     b.onkeydown = e => { if (e.key === 'Enter') b.click(); }; });
   if (audio && n.segments) audio.ontimeupdate = () => { const t = audio.currentTime; app.querySelectorAll('.turn').forEach(el => el.classList.toggle('playing', t >= +el.dataset.t && t < (+el.nextElementSibling?.dataset.t || 1e9))); };
   if (busy) pollTimer = setTimeout(() => render(true), 3000);
+}
+
+// ---------- chat ----------
+const cites = html => html.replace(/\[(\d+)\]/g, (m, k) => `<a class="cite" href="#" data-src="${k}" aria-label="Source ${k}">[${k}]</a>`);
+async function viewChats(noteId) {
+  const sessions = await api('/chats' + (noteId ? '?note=' + encodeURIComponent(noteId) : ''));
+  const note = noteId ? await api('/notes/' + noteId) : null;
+  const titles = {};
+  if (!noteId) for (const n of await api('/notes')) titles[n.id] = n.title;
+  app.innerHTML = `<div class="nav">${noteId ? back('/note/' + noteId, 'Note') : back('/', 'Notes')}</div>
+    <h1 style="font-size:28px">${note ? esc(note.title) : 'Chats'}</h1>
+    ${note ? '' : `<p class="meta">Questions are answered from all your recordings.</p>`}
+    <div class="group"><button class="row" id="newchat"><span class="main" style="color:var(--tint);font-weight:600">New chat</span>${chev}</button>
+    ${sessions.map(s => `<a class="row" href="#/chat/${s.id}"><div class="main"><div class="title">${esc(s.title)}</div>
+      <div class="sub">${esc(fmtDate(new Date(s.updated * 1000).toISOString()))}${!noteId && s.note ? ' · ' + esc(titles[s.note] || 'a recording') : ''} · ${s.model === 'claude' ? 'Claude' : 'Local'}</div></div>${chev}</a>`).join('')}</div>
+    ${sessions.length ? '' : '<div class="empty">No chats yet.</div>'}`;
+  $('#newchat').onclick = async () => { const s = await api('/chats', json('POST', noteId ? {note: noteId} : {})); location.hash = '#/chat/' + s.id; };
+}
+async function viewChat(sid) {
+  const s = await api('/chats/' + sid);
+  state.me = state.me || await api('/me');
+  const busy = s.messages.length && s.messages[s.messages.length - 1].pending;
+  const model = state.model?.[sid] || s.model || 'local';
+  const src = (x, k) => `<div class="src" data-note="${esc(x.note)}" data-turn="${x.turn}" id="src-${k}">
+      <button class="play" data-note="${esc(x.note)}" data-t="${x.start}" data-title="${esc(x.title)}" aria-label="Play this moment">▶</button>
+      <div class="body"><div class="meta"><b>${esc(x.speaker)}</b> · <a href="#/note/${esc(x.note)}?t=${x.start}">${esc(x.title)}</a> · ${esc(fmtDate(x.created))} · ${ts(x.start)}</div>
+      <div class="txt">${esc(x.hinglish)}</div>${x.english && x.english !== x.hinglish ? `<div class="en">${esc(x.english)}</div>` : ''}</div></div>`;
+  let k = 0;
+  const msg = m => m.role === 'user' ? `<div class="msg user">${esc(m.text)}</div>`
+    : m.pending ? `<div class="msg bot" aria-live="polite">Thinking… <span class="meta">${esc(m.detail || '')} · ${elapsed(Date.now() / 1000 - m.ts)}</span></div>`
+    : m.error ? `<div class="banner err">${esc(m.error)}</div>`
+    : `<div class="msg bot">${cites(md(m.text))}${m.sources?.length ? `<div style="margin-top:8px">${m.sources.map(x => src(x, ++k)).join('')}</div>` : ''}<div class="meta">${m.model === 'claude' ? 'Claude' : 'Local model'}</div></div>`;
+  app.innerHTML = `<div class="nav">${back('/chats' + (s.note ? '/' + s.note : ''), 'Chats')}<button id="menu" aria-label="More actions" style="font-size:24px;line-height:1">⋯</button></div>
+    <h1 style="font-size:22px;margin:4px 0">${esc(s.title)}</h1>
+    ${state.me.owner ? `<div class="seg" role="tablist">${[['local','Local'],['claude','Claude']].map(([v,l]) => `<button role="tab" aria-selected="${v===model}" class="${v===model?'on':''}" data-model="${v}">${l}</button>`).join('')}</div>` : ''}
+    <div id="msgs">${s.messages.map(msg).join('') || '<div class="empty">Ask anything about ' + (s.note ? 'this recording' : 'your recordings') + '.</div>'}</div>
+    <form class="bar askbar" id="askform"><input id="askin" type="text" placeholder="Ask a question" autocomplete="off" aria-label="Question" ${busy ? 'disabled' : ''}><button class="btn prominent" type="submit" ${busy ? 'disabled' : ''}>Send</button></form>`;
+  k = 0;
+  app.querySelectorAll('.seg button').forEach(b => b.onclick = () => { (state.model = state.model || {})[sid] = b.dataset.model; render(true); });
+  $('#askform').onsubmit = async e => { e.preventDefault(); const text = $('#askin').value.trim(); if (!text || busy) return;
+    try { await api(`/chats/${sid}/ask`, json('POST', {text, model})); } catch (err) { ui.alert('Could not ask', err.message); return; }
+    state.scrollBottom = true; render(true); };
+  $('#menu').onclick = async () => {
+    const c = await ui.sheet(s.title, [{label: 'New chat', value: 'new'}, {label: 'Clear messages', value: 'clear'}, {label: 'Delete chat', value: 'delete', destructive: true}]);
+    if (c === 'new') { const n = await api('/chats', json('POST', s.note ? {note: s.note, model} : {model})); location.hash = '#/chat/' + n.id; }
+    else if (c === 'clear' && await ui.confirm('Clear this chat?', 'The questions and answers will be removed.', 'Clear', true)) { await api(`/chats/${sid}/clear`, {method: 'POST'}); render(true); }
+    else if (c === 'delete' && await ui.confirm('Delete this chat?', '', 'Delete', true)) { await api('/chats/' + sid, {method: 'DELETE'}); location.hash = '#/chats' + (s.note ? '/' + s.note : ''); }
+  };
+  app.querySelectorAll('.cite').forEach(a => a.onclick = e => { e.preventDefault(); const el = $('#src-' + a.dataset.src); if (!el) return; el.scrollIntoView({block: 'center'}); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1000); });
+  app.querySelectorAll('.src .play').forEach(b => b.onclick = () => window.player?.open(b.dataset.note, +b.dataset.t, b.dataset.title));
+  const count = s.messages.length;
+  if (state.scrollBottom || (state.chatCount?.[sid] != null && state.chatCount[sid] !== count)) { state.scrollBottom = false; setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 0); }
+  (state.chatCount = state.chatCount || {})[sid] = count;
+  if (busy) pollTimer = setTimeout(() => render(true), 2000);
 }
 
 // ---------- settings ----------
@@ -338,7 +409,8 @@ async function render(refresh = false) {
   lastRoute = location.hash;
   const [p, id] = route();
   try {
-    if (p === 'note') await viewNote(id); else if (p === 'record') await viewRecord(); else if (p === 'settings') await viewSettings(); else await viewList();
+    if (p === 'note') await viewNote(id); else if (p === 'record') await viewRecord(); else if (p === 'settings') await viewSettings();
+    else if (p === 'chats') await viewChats(id); else if (p === 'chat') await viewChat(id); else await viewList();
     retryDelay = 2000;
   } catch (e) {
     const offline = e instanceof TypeError;  // fetch failed: no network / tunnel not up yet (Safari says "Load failed")
