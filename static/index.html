@@ -348,7 +348,7 @@ async function viewNote(id) {
 }
 
 // ---------- chat ----------
-const cites = html => html.replace(/\[(\d+)\]/g, (m, k) => `<a class="cite" href="#" data-src="${k}" aria-label="Source ${k}">[${k}]</a>`);
+const cites = (html, mi) => html.replace(/\[(\d+)\]/g, (m, k) => `<a class="cite" href="#" data-src="${mi}-${k}" aria-label="Source ${k}">[${k}]</a>`);
 async function viewChats(noteId) {
   const sessions = await api('/chats' + (noteId ? '?note=' + encodeURIComponent(noteId) : ''));
   const note = noteId ? await api('/notes/' + noteId) : null;
@@ -368,21 +368,21 @@ async function viewChat(sid) {
   state.me = state.me || await api('/me');
   const busy = s.messages.length && s.messages[s.messages.length - 1].pending;
   const model = state.model?.[sid] || s.model || 'local';
-  const src = (x, k) => `<div class="src" data-note="${esc(x.note)}" data-turn="${x.turn}" id="src-${k}">
+  const src = (x, k, mi) => `<div class="src" data-note="${esc(x.note)}" data-turn="${x.turn}" id="src-${mi}-${k}">
       <button class="play" data-note="${esc(x.note)}" data-t="${x.start}" data-title="${esc(x.title)}" aria-label="Play this moment">▶</button>
       <div class="body"><div class="meta"><b>${esc(x.speaker)}</b> · <a href="#/note/${esc(x.note)}?t=${x.start}">${esc(x.title)}</a> · ${esc(fmtDate(x.created))} · ${ts(x.start)}</div>
       <div class="txt">${esc(x.hinglish)}</div>${x.english && x.english !== x.hinglish ? `<div class="en">${esc(x.english)}</div>` : ''}</div></div>`;
-  let k = 0;
-  const msg = m => m.role === 'user' ? `<div class="msg user">${esc(m.text)}</div>`
+  const msg = (m, mi) => m.role === 'user' ? `<div class="msg user">${esc(m.text)}</div>`
     : m.pending ? `<div class="msg bot" aria-live="polite">${m.model === 'claude' ? 'Claude' : 'Local model'} is thinking… <span class="meta">${esc(m.detail || '')} · ${elapsed(Date.now() / 1000 - m.ts)}</span></div>`
     : m.error ? `<div class="banner err">${esc(m.error)}</div>`
-    : `<div class="msg bot">${cites(md(m.text))}${m.sources?.length ? `<div style="margin-top:8px">${m.sources.map(x => src(x, ++k)).join('')}</div>` : ''}<div class="meta">${m.model === 'claude' ? 'Claude' : 'Local model'}</div></div>`;
+    : `<div class="msg bot">${cites(md(m.text), mi)}${m.sources?.length ? `<div style="margin-top:8px">${m.sources.map((x, k) => src(x, k + 1, mi)).join('')}</div>` : ''}<div class="meta">${m.model === 'claude' ? 'Claude' : 'Local model'}</div></div>`;
+  const draft = $('#askin')?.value || '';  // what the user has typed survives polling, visibilitychange and the cached paint
   app.innerHTML = `<div class="nav">${back('/chats' + (s.note ? '/' + s.note : ''), 'Chats')}<button id="menu" aria-label="More actions" style="font-size:24px;line-height:1">⋯</button></div>
     <h1 style="font-size:22px;margin:4px 0">${esc(s.title)}</h1>
     ${state.me.owner ? `<div class="seg" role="tablist">${[['local','Local'],['claude','Claude']].map(([v,l]) => `<button role="tab" aria-selected="${v===model}" class="${v===model?'on':''}" data-model="${v}">${l}</button>`).join('')}</div>` : ''}
     <div id="msgs">${s.messages.map(msg).join('') || '<div class="empty">Ask anything about ' + (s.note ? 'this recording' : 'your recordings') + '.</div>'}</div>
-    <form class="bar askbar" id="askform"><input id="askin" type="text" placeholder="Ask a question" autocomplete="off" aria-label="Question" ${busy ? 'disabled' : ''}><button class="btn prominent" type="submit" ${busy ? 'disabled' : ''}>Send</button></form>`;
-  k = 0;
+    <form class="bar askbar" id="askform" onsubmit="return false"><input id="askin" type="text" placeholder="Ask a question" autocomplete="off" aria-label="Question" ${busy ? 'disabled' : ''}><button class="btn prominent" type="submit" ${busy ? 'disabled' : ''}>Send</button></form>`;
+  $('#askin').value = draft;
   app.querySelectorAll('.seg button').forEach(b => b.onclick = () => {  // flips at once; the choice travels with the next question
     (state.model = state.model || {})[sid] = b.dataset.model;
     app.querySelectorAll('.seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); });

@@ -371,7 +371,7 @@ def ask_chat(request: Request, sid: str, body: dict):
         s = chat.queue_question(root, sid, body["text"], model)
     except ValueError:
         raise HTTPException(409, "already answering")
-    POOL.submit(chat.answer, root, sid)
+    POOL.submit(chat.answer, root, sid).add_done_callback(lambda f: f.exception() and print(f"answer failed for {sid}: {f.exception()!r}"))
     return s
 
 

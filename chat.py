@@ -441,11 +441,26 @@ def queue_question(root, sid, text, model):
 
 
 def answer(root, sid, embed=embed, models=MODELS):
-    """Runs the pending question of a session to completion (or to an error). Safe to call from a thread."""
-    s = load_session(root, sid)
+    """Runs the pending question of a session to completion (or to an error). Safe to call from a thread.
+    Returns None when the chat was cleared, deleted or re-asked meanwhile: the stale answer is dropped, never written."""
+    try:
+        s = load_session(root, sid)
+    except KeyError:
+        return None
     if not pending(s):
         return s
     m = s["messages"][-1]
+    mine = (m["ts"], s["messages"][-2]["text"])
+
+    def save():
+        try:
+            cur = load_session(root, sid)
+        except KeyError:
+            return None
+        last = cur["messages"][-1] if cur["messages"] else None
+        if not last or not last.get("pending") or (last.get("ts"), cur["messages"][-2]["text"]) != mine:
+            return None
+        return save_session(root, s)
     try:
         users = [x["text"] for x in s["messages"] if x["role"] == "user"]
         question, prev = users[-1], (users[-2] if len(users) > 1 else None)
@@ -459,10 +474,12 @@ def answer(root, sid, embed=embed, models=MODELS):
         aliases = aliases_for(s, [r["note"] for r in s["context"]])
         text, refs = render_context(root, s["context"], aliases)
         msgs = build_messages({**s, "messages": s["messages"][:-2]}, question, text, None if note else notes_list(root))
-        m["detail"] = "thinking"; save_session(root, s)
+        m["detail"] = "thinking"
+        if save() is None:
+            return None
         call = models[m.get("model") or "local"]
         if m.get("model", "local") == "local" and pl.LLM_SHARES_GPU:
-            m["detail"] = "waiting for the GPU"; save_session(root, s)
+            m["detail"] = "waiting for the GPU"; save()
             with pl.MODELS.lock:
                 pl.MODELS.unload()
                 out = call(msgs)
@@ -473,7 +490,7 @@ def answer(root, sid, embed=embed, models=MODELS):
     except Exception as e:
         m["error"] = f"{type(e).__name__}: {str(e)[:200]}"
     m["pending"] = False; m.pop("detail", None)
-    return save_session(root, s)
+    return save()
 
 
 def mark_interrupted(root):
