@@ -81,6 +81,29 @@ progress{width:100%;height:6px;accent-color:var(--tint)}
 .toggle:checked{background:var(--green)}
 .toggle::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2);transition:left .15s}
 .toggle:checked::after{left:22px}
+/* chat */
+.msg{margin:10px 0}
+.msg.user{margin-left:auto;width:fit-content;max-width:85%;background:var(--tint);color:#fff;border-radius:18px 18px 4px 18px;padding:10px 14px;white-space:pre-wrap}
+.msg.bot{background:var(--card);border-radius:18px 18px 18px 4px;padding:12px 14px;font-size:16px}
+.msg.bot p{margin:0 0 8px}.msg.bot ul{margin:0 0 8px;padding-left:20px}.msg.bot li{margin:4px 0}
+.msg.bot .meta{font-size:12px;color:var(--secondary);margin-top:6px}
+.cite{font-size:12px;font-weight:600;color:var(--tint);text-decoration:none;padding:0 4px;border-radius:4px;background:var(--fill);min-height:0}
+.src{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:.5px solid var(--separator);margin:0 -4px;padding-left:4px;padding-right:4px;border-radius:8px}
+.src .play{width:36px;height:36px;min-width:36px;min-height:36px;border-radius:50%;background:var(--tint);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;font-size:13px;margin-top:2px}
+.src .body{flex:1;min-width:0}
+.src .meta{font-size:12px;color:var(--secondary)}.src .meta b{color:var(--tint)}.src .meta a{color:var(--secondary)}
+.src .txt{font-size:15px;margin-top:2px}.src .en{font-size:13px;color:var(--secondary);margin-top:2px}
+.src.playing,.src.flash{background:var(--fill)}
+.askbar input{flex:1;font:inherit;font-size:17px;background:var(--card);border:.5px solid var(--separator);border-radius:22px;padding:10px 16px;color:var(--label);outline:none;min-width:0;min-height:44px;box-sizing:border-box}
+.askbar input:disabled{opacity:.5}
+.askbar .btn{padding:0 16px;border-radius:22px}
+#player{position:fixed;left:12px;right:12px;bottom:calc(72px + env(safe-area-inset-bottom));max-width:696px;margin:0 auto;background:#1c1c1e;color:#fff;border-radius:14px;padding:10px 12px;box-shadow:0 4px 16px rgba(0,0,0,.3);z-index:5}
+#player[hidden]{display:none}
+#player .ptop{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:rgba(235,235,245,.6)}#player .ptop b{color:var(--tint)}
+#player .ptitle{color:rgba(235,235,245,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+#player .sub{font-size:15px;margin:6px 0 2px;line-height:1.3}#player .suben{font-size:12px;color:rgba(235,235,245,.6)}
+#player .pctl{display:flex;align-items:center;gap:4px;margin-top:4px;font-size:12px}
+#player .pctl button{color:#fff;min-width:36px;min-height:36px;font-size:13px}#player .pctl input{flex:1;min-width:0;accent-color:var(--tint)}
 /* dialogs: iOS-style alert and action sheet */
 dialog{border:0;padding:0;background:transparent;color:var(--label);max-width:none;max-height:none}
 dialog::backdrop{background:var(--dim);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
@@ -108,6 +131,13 @@ dialog::backdrop{background:var(--dim);backdrop-filter:blur(4px);-webkit-backdro
 <body>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||''}catch(e){}</script>
 <main id="app"></main>
+<div id="player" hidden role="region" aria-label="Player">
+  <div class="ptop"><span id="pwho"></span><a id="ptitle" class="ptitle" href="#"></a></div>
+  <div class="sub" id="psub"></div><div class="suben" id="psuben"></div>
+  <div class="pctl"><button data-step="-1" aria-label="Previous turn">◀◀</button><button id="pplay" aria-label="Play or pause">❚❚</button><button data-step="1" aria-label="Next turn">▶▶</button>
+    <input type="range" id="prange" min="0" max="100" step="0.1" value="0" aria-label="Position"><span id="ptime">0:00</span><button id="pclose" aria-label="Close player">✕</button></div>
+  <audio id="paudio" preload="metadata"></audio>
+</div>
 <input type="file" id="file" multiple accept="audio/*,video/*,.m4a,.mp3,.wav,.ogg,.opus,.webm,.mp4" class="sr" aria-hidden="true">
 <dialog id="dlg"></dialog>
 <script>
@@ -119,7 +149,11 @@ const dur = s => s==null ? '' : (s>=3600 ? Math.round(s/60)+' min' : Math.max(1,
 const fmtDate = iso => iso ? new Date(iso).toLocaleString([], {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}) : '';
 const dayLabel = iso => { const d = new Date(iso), t = new Date(); const diff = Math.round((new Date(t.getFullYear(),t.getMonth(),t.getDate()) - new Date(d.getFullYear(),d.getMonth(),d.getDate())) / 864e5);
   return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString([], {weekday:'short', day:'numeric', month:'short', year: d.getFullYear() === t.getFullYear() ? undefined : 'numeric'}); };
-const api = async (path, opt={}) => { const r = await fetch('/api'+path, opt); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+class StaleError extends Error {}  // the user moved to another screen while this request was in flight
+let renderSeq = 0;
+const api = async (path, opt={}) => {  // 20 s cap: a stalled tunnel becomes the retry banner, never a hang
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 20000), seq = renderSeq;
+  try { const r = await fetch('/api'+path, {...opt, signal: c.signal}); if (seq !== renderSeq) throw new StaleError('stale'); if (!r.ok) throw new Error(await r.text()); return r.json(); } finally { clearTimeout(t); } };
 const json = (method, body) => ({method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
 const spkName = (note, k) => note.speakers?.[k] || (k.startsWith('SPEAKER_') ? 'Speaker ' + (parseInt(k.split('_').pop()) + 1) : k);
 const STATES = {uploading:'Uploading', queued:'Queued', recording:'Recording', convert:'Converting', denoise:'Removing noise', diarize:'Finding speakers', transcribe:'Transcribing', translate:'Hinglish + English', summarize:'Summary + title', done:'', error:'Failed'};
@@ -195,7 +229,7 @@ async function viewList() {
     <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="Search transcripts" value="${esc(q)}" aria-label="Search transcripts"></label>
     ${q ? '' : `<div class="seg" role="tablist" style="margin-top:0">${[['date','By date'],['folder','By folder']].map(([v,l]) => `<button role="tab" aria-selected="${v===view}" class="${v===view?'on':''}" data-view="${v}">${l}</button>`).join('')}</div>`}
     ${body}
-    <div class="bar"><button class="btn" id="upload" aria-label="Upload a recording"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 20h16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Upload</button>
+    <div class="bar"><a class="btn" href="#/chats" aria-label="Ask about your recordings"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>Ask</a><button class="btn" id="upload" aria-label="Upload a recording"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 20h16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Upload</button>
     <a class="btn record" href="#/record" aria-label="Record a meeting"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 11a7 7 0 0014 0M12 18v4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>Record</a></div>`;
   $('#q').oninput = e => { state.q = e.target.value; clearTimeout(state.qt); state.qt = setTimeout(viewList, 250); };
   if (q) { const i = $('#q'); i.focus(); i.setSelectionRange(q.length, q.length); }
@@ -270,6 +304,7 @@ async function viewRecord() {
 
 // ---------- note ----------
 async function viewNote(id) {
+  const [nid, qs] = id.split('?'); id = nid; const seekTo = new URLSearchParams(qs || '').get('t');
   const n = await api('/notes/' + id);
   const st = n.status.state, mode = state.mode || 'hinglish';
   const busy = !['done', 'error'].includes(st);
@@ -290,8 +325,9 @@ async function viewNote(id) {
   $('#title').onclick = rename;
   $('#title').onkeydown = e => { if (e.key === 'Enter') rename(); };
   $('#menu').onclick = async () => {
-    const c = await ui.sheet(n.title, [{label: 'Rename', value: 'rename'}, {label: 'Move to folder…', value: 'folder'}, {label: 'Copy markdown', value: 'copy'}, {label: 'Re-transcribe', value: 'retry'}, {label: 'Delete', value: 'delete', destructive: true}]);
-    if (c === 'rename') rename();
+    const c = await ui.sheet(n.title, [{label: 'Ask about this recording', value: 'ask'}, {label: 'Rename', value: 'rename'}, {label: 'Move to folder…', value: 'folder'}, {label: 'Copy markdown', value: 'copy'}, {label: 'Re-transcribe', value: 'retry'}, {label: 'Delete', value: 'delete', destructive: true}]);
+    if (c === 'ask') location.hash = '#/chats/' + id;
+    else if (c === 'rename') rename();
     else if (c === 'folder') { const f = await pickFolder(n.folder); if (f !== null) { await api('/notes/' + id, json('PATCH', {folder: f})); ui.toast(f ? 'Moved to ' + f : 'Removed from folder'); render(); } }
     else if (c === 'copy') { const m = await (await fetch(`/api/notes/${id}/md`)).text(); try { await navigator.clipboard.writeText(m); ui.toast('Markdown copied'); } catch (e) { ui.alert('Could not copy', e.message); } }
     else if (c === 'retry' && await ui.confirm('Re-transcribe?', 'The transcript, summary and speaker labels will be regenerated.', 'Re-transcribe')) { await api(`/notes/${id}/retranscribe`, json('POST', {})); render(); }
@@ -299,6 +335,9 @@ async function viewNote(id) {
   };
   app.querySelectorAll('.seg button').forEach(b => b.onclick = () => { state.mode = b.dataset.m; render(); });
   const audio = $('#audio');
+  if (audio && seekTo !== null && !state.sought) { state.sought = true;  // opened from a chat source: start there and show that turn
+    const go = () => { audio.currentTime = +seekTo; audio.play().catch(() => {}); const turns = [...app.querySelectorAll('.turn')]; const el = turns.filter(t => +t.dataset.t <= +seekTo).pop(); if (el) el.scrollIntoView({block: 'center'}); };
+    if (audio.readyState >= 1) go(); else audio.addEventListener('loadedmetadata', go, {once: true}); }
   app.querySelectorAll('.turn').forEach(t => t.onclick = e => { if (e.target.dataset.spk || !audio) return; audio.currentTime = +t.dataset.t; audio.play(); });
   app.querySelectorAll('[data-spk]').forEach(b => { b.onclick = async () => {
     const name = await ui.prompt(`Name ${spkName(n, b.dataset.spk)}`, n.speakers[b.dataset.spk] || '', 'Name', 'This voice will be recognised in future recordings.');
@@ -306,6 +345,63 @@ async function viewNote(id) {
     b.onkeydown = e => { if (e.key === 'Enter') b.click(); }; });
   if (audio && n.segments) audio.ontimeupdate = () => { const t = audio.currentTime; app.querySelectorAll('.turn').forEach(el => el.classList.toggle('playing', t >= +el.dataset.t && t < (+el.nextElementSibling?.dataset.t || 1e9))); };
   if (busy) pollTimer = setTimeout(() => render(true), 3000);
+}
+
+// ---------- chat ----------
+const cites = (html, mi) => html.replace(/\[(\d+)\]/g, (m, k) => `<a class="cite" href="#" data-src="${mi}-${k}" aria-label="Source ${k}">[${k}]</a>`);
+async function viewChats(noteId) {
+  const sessions = await api('/chats' + (noteId ? '?note=' + encodeURIComponent(noteId) : ''));
+  const note = noteId ? await api('/notes/' + noteId) : null;
+  const titles = {};
+  if (!noteId) for (const n of await api('/notes')) titles[n.id] = n.title;
+  app.innerHTML = `<div class="nav">${noteId ? back('/note/' + noteId, 'Note') : back('/', 'Notes')}</div>
+    <h1 style="font-size:28px">${note ? esc(note.title) : 'Chats'}</h1>
+    ${note ? '' : `<p class="meta">Questions are answered from all your recordings.</p>`}
+    <div class="group"><button class="row" id="newchat"><span class="main" style="color:var(--tint);font-weight:600">New chat</span>${chev}</button>
+    ${sessions.map(s => `<a class="row" href="#/chat/${s.id}"><div class="main"><div class="title">${esc(s.title)}</div>
+      <div class="sub">${esc(fmtDate(new Date(s.updated * 1000).toISOString()))}${!noteId && s.note ? ' · ' + esc(titles[s.note] || 'a recording') : ''} · ${s.model === 'claude' ? 'Claude' : 'Local'}</div></div>${chev}</a>`).join('')}</div>
+    ${sessions.length ? '' : '<div class="empty">No chats yet.</div>'}`;
+  $('#newchat').onclick = async () => { const s = await api('/chats', json('POST', noteId ? {note: noteId} : {})); location.hash = '#/chat/' + s.id; };
+}
+async function viewChat(sid) {
+  const s = await api('/chats/' + sid);
+  state.me = state.me || await api('/me');
+  const busy = s.messages.length && s.messages[s.messages.length - 1].pending;
+  const model = state.model?.[sid] || s.model || 'local';
+  const src = (x, k, mi) => `<div class="src" data-note="${esc(x.note)}" data-turn="${x.turn}" id="src-${mi}-${k}">
+      <button class="play" data-note="${esc(x.note)}" data-t="${x.start}" data-title="${esc(x.title)}" aria-label="Play this moment">▶</button>
+      <div class="body"><div class="meta"><b>${esc(x.speaker)}</b> · <a href="#/note/${esc(x.note)}?t=${x.start}">${esc(x.title)}</a> · ${esc(fmtDate(x.created))} · ${ts(x.start)}</div>
+      <div class="txt">${esc(x.hinglish)}</div>${x.english && x.english !== x.hinglish ? `<div class="en">${esc(x.english)}</div>` : ''}</div></div>`;
+  const msg = (m, mi) => m.role === 'user' ? `<div class="msg user">${esc(m.text)}</div>`
+    : m.pending ? `<div class="msg bot" aria-live="polite">${m.model === 'claude' ? 'Claude' : 'Local model'} is thinking… <span class="meta">${esc(m.detail || '')} · ${elapsed(Date.now() / 1000 - m.ts)}</span></div>`
+    : m.error ? `<div class="banner err">${esc(m.error)}</div>`
+    : `<div class="msg bot">${cites(md(m.text), mi)}${m.sources?.length ? `<div style="margin-top:8px">${m.sources.map((x, k) => src(x, k + 1, mi)).join('')}</div>` : ''}<div class="meta">${m.model === 'claude' ? 'Claude' : 'Local model'}</div></div>`;
+  const draft = $('#askin')?.value || '';  // what the user has typed survives polling, visibilitychange and the cached paint
+  app.innerHTML = `<div class="nav">${back('/chats' + (s.note ? '/' + s.note : ''), 'Chats')}<button id="menu" aria-label="More actions" style="font-size:24px;line-height:1">⋯</button></div>
+    <h1 style="font-size:22px;margin:4px 0">${esc(s.title)}</h1>
+    ${state.me.owner ? `<div class="seg" role="tablist">${[['local','Local'],['claude','Claude']].map(([v,l]) => `<button role="tab" aria-selected="${v===model}" class="${v===model?'on':''}" data-model="${v}">${l}</button>`).join('')}</div>` : ''}
+    <div id="msgs">${s.messages.map(msg).join('') || '<div class="empty">Ask anything about ' + (s.note ? 'this recording' : 'your recordings') + '.</div>'}</div>
+    <form class="bar askbar" id="askform" onsubmit="return false"><input id="askin" type="text" placeholder="Ask a question" autocomplete="off" aria-label="Question" ${busy ? 'disabled' : ''}><button class="btn prominent" type="submit" ${busy ? 'disabled' : ''}>Send</button></form>`;
+  $('#askin').value = draft;
+  app.querySelectorAll('.seg button').forEach(b => b.onclick = () => {  // flips at once; the choice travels with the next question
+    (state.model = state.model || {})[sid] = b.dataset.model;
+    app.querySelectorAll('.seg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); });
+  $('#askform').onsubmit = async e => { e.preventDefault(); const text = $('#askin').value.trim(); if (!text || busy) return;
+    const chosen = state.model?.[sid] || model;
+    try { await api(`/chats/${sid}/ask`, json('POST', {text, model: chosen})); } catch (err) { ui.alert('Could not ask', err.message); return; }
+    state.scrollBottom = true; render(true); };
+  $('#menu').onclick = async () => {
+    const c = await ui.sheet(s.title, [{label: 'New chat', value: 'new'}, {label: 'Clear messages', value: 'clear'}, {label: 'Delete chat', value: 'delete', destructive: true}]);
+    if (c === 'new') { const n = await api('/chats', json('POST', s.note ? {note: s.note, model} : {model})); location.hash = '#/chat/' + n.id; }
+    else if (c === 'clear' && await ui.confirm('Clear this chat?', 'The questions and answers will be removed.', 'Clear', true)) { await api(`/chats/${sid}/clear`, {method: 'POST'}); render(true); }
+    else if (c === 'delete' && await ui.confirm('Delete this chat?', '', 'Delete', true)) { await api('/chats/' + sid, {method: 'DELETE'}); location.hash = '#/chats' + (s.note ? '/' + s.note : ''); }
+  };
+  app.querySelectorAll('.cite').forEach(a => a.onclick = e => { e.preventDefault(); const el = $('#src-' + a.dataset.src); if (!el) return; el.scrollIntoView({block: 'center'}); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1000); });
+  app.querySelectorAll('.src .play').forEach(b => b.onclick = () => window.player?.open(b.dataset.note, +b.dataset.t, b.dataset.title));
+  const count = s.messages.length;
+  if (state.scrollBottom || (state.chatCount?.[sid] != null && state.chatCount[sid] !== count)) { state.scrollBottom = false; setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 0); }
+  (state.chatCount = state.chatCount || {})[sid] = count;
+  if (busy) pollTimer = setTimeout(() => render(true), 2000);
 }
 
 // ---------- settings ----------
@@ -334,14 +430,23 @@ async function render(refresh = false) {
   if (dlg.open && !refresh) { dlg.close(); dlg.innerHTML = ''; }
   if (dlg.open) { pollTimer = setTimeout(() => render(true), 3000); return; }  // don't repaint under an open dialog
   const sameRoute = location.hash === lastRoute;
-  const y = refresh || sameRoute ? window.scrollY : 0;  // only a real navigation starts at the top
+  if (!sameRoute) { renderSeq++; state.sought = false; (state.scroll = state.scroll || {})[lastRoute] = window.scrollY; }
+  const y = refresh || sameRoute ? window.scrollY : (state.scroll?.[location.hash] ?? 0);  // a route you come back to keeps its scroll
   lastRoute = location.hash;
   const [p, id] = route();
+  if (p !== 'chat' && window.player) player.close();
+  if (!refresh && !sameRoute) {  // paint at once from what this route showed last time (or a placeholder); the data arrives after
+    app.innerHTML = state.html?.[location.hash] || `<div class="nav">${back('/', 'Notes')}</div><div class="empty">Loading…</div>`;
+    window.scrollTo(0, y);
+  }
   try {
-    if (p === 'note') await viewNote(id); else if (p === 'record') await viewRecord(); else if (p === 'settings') await viewSettings(); else await viewList();
+    if (p === 'note') await viewNote(id); else if (p === 'record') await viewRecord(); else if (p === 'settings') await viewSettings();
+    else if (p === 'chats') await viewChats(id); else if (p === 'chat') await viewChat(id); else await viewList();
     retryDelay = 2000;
+    (state.html = state.html || {})[location.hash] = app.innerHTML;
   } catch (e) {
-    const offline = e instanceof TypeError;  // fetch failed: no network / tunnel not up yet (Safari says "Load failed")
+    if (e instanceof StaleError) return;  // a newer screen owns the page now
+    const offline = e instanceof TypeError || e.name === 'AbortError';  // fetch failed or timed out: no network / tunnel not up yet (Safari says "Load failed")
     app.innerHTML = `<div class="nav">${back('/', 'Notes')}</div><div class="banner err">${offline ? 'Can\u2019t reach the server. Retrying\u2026' : esc(e.message)}</div>`;
     if (offline) { retryTimer = setTimeout(() => render(true), retryDelay); retryDelay = Math.min(retryDelay * 2, 15000); }
   }
@@ -357,6 +462,36 @@ function applyTheme(t) {
   const c = t === 'pink' ? ['#fbeef3', '#140a0f'] : ['#f2f2f7', '#000000'];
   document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => m.content = c[i]);
 }
+// ---------- pinned player (lives outside #app so chat polling never destroys it) ----------
+const player = window.player = {
+  note: null, segs: [], title: '', el: $('#player'), audio: $('#paudio'),
+  async open(note, t, title) {
+    if (this.note !== note) {
+      state.notes = state.notes || {}; const n = state.notes[note] || (state.notes[note] = await api('/notes/' + note));
+      this.segs = n.segments || []; this.title = n.title || title; this.note = note; this.audio.src = `/api/notes/${note}/audio`; $('#prange').max = n.duration || 0;
+    }
+    this.el.hidden = false;
+    const go = () => { this.audio.currentTime = t; this.audio.play().catch(() => {}); this.tick(); };
+    if (this.audio.readyState >= 1) go(); else this.audio.addEventListener('loadedmetadata', go, {once: true});
+  },
+  close() { if (this.el.hidden) return; this.audio.pause(); this.el.hidden = true; this.note = null; this.audio.removeAttribute('src'); this.audio.load(); app.querySelectorAll('.src.playing').forEach(e => e.classList.remove('playing')); },
+  idx() { const t = this.audio.currentTime; let i = -1; for (let k = 0; k < this.segs.length; k++) { if (this.segs[k].start <= t + 0.01) i = k; else break; } return i; },
+  step(d) { if (!this.segs.length) return; const i = Math.min(this.segs.length - 1, Math.max(0, this.idx() + d)); this.audio.currentTime = this.segs[i].start; this.audio.play().catch(() => {}); this.tick(); },
+  tick() {
+    if (this.el.hidden || !this.note) return;
+    const i = this.idx(), s = this.segs[i], n = state.notes[this.note], t = this.audio.currentTime;
+    $('#pwho').innerHTML = (s ? `<b>${esc(spkName(n, s.speaker))}</b> · ` : '') + ts(t);
+    $('#ptitle').textContent = this.title + ' ›'; $('#ptitle').href = `#/note/${this.note}?t=${Math.floor(t)}`;
+    $('#psub').textContent = s ? (s.hinglish || s.text) : ''; $('#psuben').textContent = s && s.english && s.english !== (s.hinglish || s.text) ? s.english : '';
+    $('#prange').value = t; $('#ptime').textContent = ts(t); $('#pplay').textContent = this.audio.paused ? '▶' : '❚❚';
+    app.querySelectorAll('.src').forEach(e => e.classList.toggle('playing', e.dataset.note === this.note && +e.dataset.turn === i));
+  },
+};
+player.audio.ontimeupdate = player.audio.onpause = player.audio.onplay = () => player.tick();
+$('#pplay').onclick = () => player.audio.paused ? player.audio.play().catch(() => {}) : player.audio.pause();
+$('#pclose').onclick = () => player.close();
+document.querySelectorAll('#player [data-step]').forEach(b => b.onclick = () => player.step(+b.dataset.step));
+$('#prange').oninput = e => { player.audio.currentTime = +e.target.value; player.tick(); };
 api('/settings').then(s => applyTheme(s.theme)).catch(() => {});
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 const shared = new URLSearchParams(location.search).get('shared');
