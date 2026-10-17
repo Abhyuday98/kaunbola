@@ -303,3 +303,131 @@ def call_claude(messages):
 
 
 MODELS = {"local": call_local, "claude": call_claude}
+
+
+# ---------- sessions ----------
+SID = re.compile(r"^[0-9A-Za-z-]+$")
+
+
+def chats_dir(root):
+    d = root / "chats"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def now():
+    return time.time()
+
+
+def save_session(root, s):
+    s["updated"] = now()
+    pl.write_json(chats_dir(root) / f"{s['id']}.json", s)
+    return s
+
+
+def new_session(root, note, model):
+    s = {"id": time.strftime("%Y-%m-%d-%H%M%S-") + uuid.uuid4().hex[:4], "created": now(), "updated": now(), "title": "New chat",
+         "note": note, "model": model, "aliases": {}, "context": [], "messages": []}
+    return save_session(root, s)
+
+
+def load_session(root, sid):
+    if not SID.match(sid or ""):
+        raise KeyError(sid)
+    s = pl.read_json(chats_dir(root) / f"{sid}.json", None)
+    if s is None:
+        raise KeyError(sid)
+    return s
+
+
+def list_sessions(root, note=None):
+    out = []
+    for p in chats_dir(root).glob("*.json"):
+        s = pl.read_json(p, None)
+        if s and (note is None or s.get("note") == note):
+            out.append({"id": s["id"], "title": s["title"], "note": s.get("note"), "model": s.get("model", "local"), "updated": s["updated"], "count": len(s["messages"])})
+    return sorted(out, key=lambda s: s["updated"], reverse=True)
+
+
+def delete_session(root, sid):
+    load_session(root, sid)
+    (chats_dir(root) / f"{sid}.json").unlink()
+
+
+def clear_session(root, sid):
+    s = load_session(root, sid)
+    s["messages"], s["context"] = [], []
+    return save_session(root, s)
+
+
+def pending(s):
+    return bool(s["messages"]) and s["messages"][-1]["role"] == "assistant" and s["messages"][-1].get("pending", False)
+
+
+def queue_question(root, sid, text, model):
+    s = load_session(root, sid)
+    if pending(s):
+        raise ValueError("busy")
+    if not any(m["role"] == "user" for m in s["messages"]):
+        s["title"] = text.strip()[:60]
+    s["model"] = model
+    s["messages"] += [{"role": "user", "text": text.strip(), "ts": now()},
+                      {"role": "assistant", "text": "", "sources": [], "model": model, "ts": now(), "pending": True, "detail": "retrieving"}]
+    return save_session(root, s)
+
+
+def answer(root, sid, embed=embed, models=MODELS):
+    """Runs the pending question of a session to completion (or to an error). Safe to call from a thread."""
+    s = load_session(root, sid)
+    if not pending(s):
+        return s
+    m = s["messages"][-1]
+    try:
+        users = [x["text"] for x in s["messages"] if x["role"] == "user"]
+        question, prev = users[-1], (users[-2] if len(users) > 1 else None)
+        note = s.get("note")
+        if note and fits_whole(root, note):
+            n = len((note_json(root, note) or {}).get("segments", []))
+            new = [{"note": note, "first": 0, "last": n - 1, "score": 1.0}]
+        else:
+            new = retrieve(root, query_text(question, prev), note, embed=embed)
+        s["context"] = union_context(s.get("context", []), new, root)
+        aliases = aliases_for(s, [r["note"] for r in s["context"]])
+        text, refs = render_context(root, s["context"], aliases)
+        msgs = build_messages({**s, "messages": s["messages"][:-2]}, question, text, None if note else notes_list(root))
+        m["detail"] = "thinking"; save_session(root, s)
+        call = models[m.get("model") or "local"]
+        if m.get("model", "local") == "local" and pl.LLM_SHARES_GPU:
+            m["detail"] = "waiting for the GPU"; save_session(root, s)
+            with pl.MODELS.lock:
+                pl.MODELS.unload()
+                out = call(msgs)
+        else:
+            out = call(msgs)
+        m["text"], kept = validate(out, refs)
+        m["sources"] = [src for src in (resolve(root, r, aliases) for r in kept) if src]
+    except Exception as e:
+        m["error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    m["pending"] = False; m.pop("detail", None)
+    return save_session(root, s)
+
+
+def mark_interrupted(root):
+    for p in chats_dir(root).glob("*.json"):
+        s = pl.read_json(p, None)
+        if s and pending(s):
+            s["messages"][-1].update({"pending": False, "error": "interrupted by a restart"}); s["messages"][-1].pop("detail", None)
+            save_session(root, s)
+
+
+def index_missing(root, embed=embed):
+    built = 0
+    for d in sorted(root.iterdir()):
+        if d.is_dir() and NOTE_ID.match(d.name) and (d / "transcript.json").exists():
+            had = (d / "chunks.npy").exists() and pl.read_json(d / "chunks.json", {}).get("hash")
+            try:
+                index_note(d, embed=embed)
+                built += 0 if had and pl.read_json(d / "chunks.json", {}).get("hash") == had else 1
+            except Exception as e:
+                print(f"index failed for {d.name}: {e}")
+    return built
