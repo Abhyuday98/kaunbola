@@ -131,6 +131,18 @@ def test_render_validate_resolve():
     assert src["speaker"] == "Speaker 2" and src["start"] == 70.0 and src["title"] == "A note" and chat.resolve(root, "n1#99", aliases) is None
 
 
+def test_quotes_become_sources_and_aliases_never_leak():
+    import chat
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS)
+    aliases = {"n1": d.name}
+    text, refs = chat.render_context(root, [{"note": d.name, "first": 5, "last": 9, "score": 1}], aliases)
+    # the model quoted turn 7's words but cited nothing: the quote still resolves to a source
+    ans, kept = chat.validate({"answer": 'She said "budget line pe baat hui budget line" and moved on (n1).', "sources": []}, refs, root=root, aliases=aliases)
+    assert kept == ["n1#7"] and ans == 'She said "budget line pe baat hui budget line" [1] and moved on.', ans
+    ans, kept = chat.validate({"answer": "Nothing here (n2) at all.", "sources": []}, refs, root=root, aliases=aliases)
+    assert ans == "Nothing here at all." and kept == []
+
+
 def test_prompt_stays_under_ctx():
     import chat, pipeline
     root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS * 40)  # 1200 turns

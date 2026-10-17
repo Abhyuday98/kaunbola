@@ -279,8 +279,27 @@ def build_messages(session, question, context_text, listing):
     return msgs(head)
 
 
-def validate(answer, refs):
-    """Keep only refs that were in the context; renumber markers in the text to [k]; drop markers of unknown refs."""
+QUOTE = re.compile(r'[“"]([^"”]{15,}?)[”"]')
+
+
+def quote_sources(text, refs, root, aliases):
+    """Refs for quoted passages the model did not cite: a quote of 15+ chars that appears in exactly one context turn names that turn."""
+    out = []
+    turns = {}
+    for r in refs:
+        alias, _, i = r.partition("#")
+        t = note_json(root, aliases.get(alias, "")) if aliases else None
+        if t and i.isdigit() and int(i) < len(t.get("segments", [])):
+            turns[r] = turn_text(t["segments"][int(i)]).lower()
+    for q in QUOTE.findall(text):
+        hits = [r for r, tt in turns.items() if q.lower() in tt]
+        if len(hits) == 1 and hits[0] not in out:
+            out.append(hits[0])
+    return out
+
+
+def validate(answer, refs, root=None, aliases=None):
+    """Keep only refs that were in the context; renumber markers in the text to [k]; drop markers of unknown refs; never show an alias."""
     kept = []
     for s in answer.get("sources") or []:
         r = s.get("ref") if isinstance(s, dict) else s
@@ -290,6 +309,12 @@ def validate(answer, refs):
     for r in REF.findall(text):
         if r in refs and r not in kept:
             kept.append(r)
+    text = re.sub(r" ?\((n\d+)\)", "", text)  # "(n1)" leaked into prose
+    if not kept and root is not None:
+        for r in quote_sources(text, refs, root, aliases or {}):
+            kept.append(r)
+            q = next(m for m in QUOTE.finditer(text) if r in quote_sources(m.group(0), refs, root, aliases or {}))
+            text = text[:q.end()] + f" [{r}]" + text[q.end():]
     def sub(m):
         r = m.group(1)
         return f"[{kept.index(r) + 1}]" if r in kept else ""
@@ -443,7 +468,7 @@ def answer(root, sid, embed=embed, models=MODELS):
                 out = call(msgs)
         else:
             out = call(msgs)
-        m["text"], kept = validate(out, refs)
+        m["text"], kept = validate(out, refs, root, aliases)
         m["sources"] = [src for src in (resolve(root, r, aliases) for r in kept) if src]
     except Exception as e:
         m["error"] = f"{type(e).__name__}: {str(e)[:200]}"
