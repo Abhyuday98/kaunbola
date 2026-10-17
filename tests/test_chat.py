@@ -82,6 +82,31 @@ def test_union_context_caps_from_front():
     assert chat.range_chars(root, ctx2) <= chat.CONTEXT_CHARS and (ctx2[0]["first"], ctx2[0]["last"]) != (0, 5)
 
 
+def test_render_validate_resolve():
+    import chat
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS)
+    s = {"aliases": {}, "messages": [], "context": []}
+    aliases = chat.aliases_for(s, [d.name]); assert aliases == {"n1": d.name}
+    text, refs = chat.render_context(root, [{"note": d.name, "first": 6, "last": 8, "score": 1}], aliases)
+    assert "## n1: A note (2026-10-09)" in text and "[n1#7] 00:01:10 Priya:" not in text and "[n1#7] 00:01:10 Speaker 2:" in text and refs == {"n1#6", "n1#7", "n1#8"}
+    ans, kept = chat.validate({"answer": "Budget was raised [n1#7] and ignored [n1#9]. Also [n1#6].", "sources": [{"ref": "n1#7"}, {"ref": "n1#9"}]}, refs)
+    assert ans == "Budget was raised [1] and ignored. Also [2]."          # a dropped marker takes one preceding space with it
+    assert kept == ["n1#7", "n1#6"]
+    src = chat.resolve(root, "n1#7", aliases)
+    assert src["speaker"] == "Speaker 2" and src["start"] == 70.0 and src["title"] == "A note" and chat.resolve(root, "n1#99", aliases) is None
+
+
+def test_prompt_stays_under_ctx():
+    import chat, pipeline
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS * 40)  # 1200 turns
+    s = {"aliases": {}, "messages": [{"role": "user", "text": "q" * 3000}, {"role": "assistant", "text": "a" * 3000}] * 5, "context": []}
+    ranges = chat.union_context([], [{"note": d.name, "first": 0, "last": 1199, "score": 1}], root)
+    text, refs = chat.render_context(root, ranges, chat.aliases_for(s, [d.name]))
+    msgs = chat.build_messages(s, "final question", text, chat.notes_list(root))
+    assert chat.prompt_chars(msgs) <= pipeline.NUM_CTX * pipeline.CHARS_PER_TOKEN * 0.85
+    assert msgs[0]["role"] == "system" and msgs[-1] == {"role": "user", "content": "final question"} and len(msgs) >= 4
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
