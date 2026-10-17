@@ -15,6 +15,8 @@ EMB_MODEL = DIAR_MODEL  # centroids come from the diarization pipeline
 LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3.5:9b")
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 LLM_SHARES_GPU = any(h in OLLAMA for h in ("127.0.0.1", "localhost"))  # remote Ollama: never evict either side
+NUM_CTX = 24576  # one context size for every Ollama call: a different num_ctx reloads the model (14 s) and drops its KV cache
+CHARS_PER_TOKEN = 2.4  # measured for Hinglish on qwen3.6; prompts longer than NUM_CTX are silently cut in half by Ollama
 SR = 16000
 DEFAULT_SETTINGS = {"match_threshold": 0.55, "denoise": True, "atten_db": 30, "language": "auto", "theme": "system"}
 LANG_NAMES = {"en": "English", "hi": "Hindi"}
@@ -373,14 +375,18 @@ For each item return {i, hinglish, english}:
 Keep every sentence and every item. Do not summarise, merge, or add anything."""
 
 
-def llm_json(system, user, schema, num_ctx=8192):
+def llm_messages(messages, schema, num_predict=None):
     import urllib.request
+    opts = {"temperature": 0.1, "num_ctx": NUM_CTX, **({"num_predict": num_predict} if num_predict else {})}
     body = {"model": LLM_MODEL, "stream": False, "think": False, "keep_alive": "5m" if LLM_SHARES_GPU else -1, "format": schema,
-            "options": {"temperature": 0.1, "num_ctx": num_ctx},
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+            "options": opts, "messages": messages}
     req = urllib.request.Request(OLLAMA + "/api/chat", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=1800) as r:
         return json.loads(json.loads(r.read())["message"]["content"])
+
+
+def llm_json(system, user, schema):
+    return llm_messages([{"role": "system", "content": system}, {"role": "user", "content": user}], schema)
 
 
 def ollama_unload():
@@ -416,17 +422,17 @@ def summarize(segments, speakers, status=lambda d: None):
     """-> {title, summary, action_items}. Long transcripts are reduced chunk by chunk first."""
     lines = [f"[{fmt_ts(s['start'])}] {speakers.get(s['speaker']) or spk_label(s['speaker'])}: {s.get('english') or s['text']}" for s in segments]
     text = "\n".join(lines)
-    CH = 30000  # chars ≈ 8k tokens, fits num_ctx=12288 with the answer
+    CH = int(NUM_CTX * CHARS_PER_TOKEN * 0.6)  # ~35k chars: room left for the prompt and the answer inside NUM_CTX
     if len(text) > CH:
         parts = [text[i:i + CH] for i in range(0, len(text), CH)]
         notes = []
         for i, part in enumerate(parts):
             status(f"part {i + 1}/{len(parts)}")
-            r = llm_json("Extract the key points and action items from this part of a meeting transcript. Be concrete and faithful.", part, CHUNK_SCHEMA, 12288)
+            r = llm_json("Extract the key points and action items from this part of a meeting transcript. Be concrete and faithful.", part, CHUNK_SCHEMA)
             notes.append("Key points:\n- " + "\n- ".join(r["key_points"]) + "\nAction items:\n- " + "\n- ".join(r["action_items"]))
         text = "Notes from consecutive parts of one meeting:\n\n" + "\n\n".join(notes)
     status("writing")
-    return llm_json(SUMMARY_PROMPT, text, SUMMARY_SCHEMA, 12288)
+    return llm_json(SUMMARY_PROMPT, text, SUMMARY_SCHEMA)
 
 
 def hinglish_english(segments, status):
@@ -553,6 +559,8 @@ if __name__ == "__main__":
     assert strip_context("Basically, we are transcribing this recording. We will see the rest of the details later.") == ""
     assert strip_context("Okay. Details baad mein bhejna.") == "Okay. Details baad mein bhejna."
     assert merge_turns([(0, 1, "A"), (1.2, 2, "A"), (2.5, 3, "B"), (3.1, 3.2, "B")]) == [(0, 2, "A"), (2.5, 3.2, "B")]
+    assert NUM_CTX == 24576 and "num_ctx" not in llm_json.__code__.co_varnames
+    assert summarize.__code__.co_consts.count(12288) == 0 and summarize.__code__.co_consts.count(30000) == 0
     if len(sys.argv) < 2:
         print('self-checks ok'); sys.exit()
     # smoke check: python pipeline.py some.m4a  -> transcribes into NOTES and prints the markdown
