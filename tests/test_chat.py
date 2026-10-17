@@ -117,6 +117,31 @@ def test_followup_keeps_first_context():
     assert chat.RETRIEVE_CHARS * 2 <= chat.CONTEXT_CHARS
 
 
+def test_clear_or_delete_during_answer_wins():
+    import chat
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS); chat.index_note(d, embed=fake_embed)
+    good = lambda msgs: {"answer": "Budget pe baat hui [n1#7].", "sources": [{"ref": "n1#7"}]}
+    # 1. the user clears the chat and asks something new while the first answer is still being written
+    s = chat.new_session(root, None, "local"); sid = s["id"]
+    chat.queue_question(root, sid, "first question about the budget", "local")
+    def clear_then_ask(msgs):
+        chat.clear_session(root, sid); chat.queue_question(root, sid, "second question", "local"); return good(msgs)
+    chat.answer(root, sid, embed=fake_embed, models={"local": clear_then_ask})
+    s = chat.load_session(root, sid)
+    assert [m["text"] for m in s["messages"] if m["role"] == "user"] == ["second question"], "the stale answer must not overwrite a cleared chat"
+    assert chat.pending(s), "the new question must still be waiting for its own answer"
+    s = chat.answer(root, sid, embed=fake_embed, models={"local": good})
+    assert s["messages"][-1]["text"].startswith("Budget pe baat hui") and not chat.pending(s)
+    # 2. the user deletes the chat while an answer is in flight: it must stay deleted
+    s = chat.new_session(root, None, "local"); sid = s["id"]
+    chat.queue_question(root, sid, "to be deleted", "local")
+    def delete_mid(msgs):
+        chat.delete_session(root, sid); return good(msgs)
+    assert chat.answer(root, sid, embed=fake_embed, models={"local": delete_mid}) is None
+    assert not (chat.chats_dir(root) / f"{sid}.json").exists(), "a deleted chat must not be resurrected"
+    assert chat.answer(root, sid, embed=fake_embed, models={"local": good}) is None   # answering a missing session is a no-op, not a crash
+
+
 def test_render_validate_resolve():
     import chat
     root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS)
