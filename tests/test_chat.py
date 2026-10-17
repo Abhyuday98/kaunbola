@@ -55,8 +55,9 @@ def test_chunk_turns_terminates_on_long_turn():
 def test_index_note_roundtrip_and_skip():
     import chat
     root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS)
-    n = chat.index_note(d, embed=fake_embed)
-    assert n == len(chat.chunk_turns(SEGS)) and (d / "chunks.npy").exists()
+    seen = []
+    n = chat.index_note(d, embed=lambda t: seen.extend(t) or fake_embed(t))
+    assert n == len(chat.chunk_turns(SEGS)) and (d / "chunks.npy").exists() and seen[0].startswith("A note\n")   # the title is embedded with each chunk
     calls = []
     assert chat.index_note(d, embed=lambda t: calls.append(t) or fake_embed(t)) == n and calls == []  # hash unchanged: no embedding
     [(nid, chunks, m)] = chat.load_index(root)
@@ -71,8 +72,8 @@ def test_retrieve_cross_script_and_grep():
     r1 = chat.retrieve(root, "budget line pe kya baat hui", embed=fake_embed, top_k=2)
     assert any(x["first"] <= 7 <= x["last"] for x in r1), r1            # turn 7 is the budget turn
     assert all(x["first"] >= 0 and x["last"] < len(SEGS) for x in r1)
-    hits = chat.grep_leg(root, "What did Priya say at 00:40", None)      # "Priya" names SPEAKER_00 -> every even turn; "What" and "00:40" match no text
-    assert hits == {(d.name, t) for t in range(0, 30, 2)}
+    assert chat.grep_leg(root, "What did Priya say at 00:40", None) == set()   # a name is not a text hit; "What" and "00:40" match no text
+    assert chat.named_speakers(root, "What did Priya say at 00:40", None) == {(d.name, "SPEAKER_00")}
 
 
 def test_grep_ignores_common_words_and_retrieve_caps_by_score():
@@ -80,10 +81,12 @@ def test_grep_ignores_common_words_and_retrieve_caps_by_score():
     root = Path(tempfile.mkdtemp())
     segs = [{**x, "hinglish": "What about " + x["hinglish"]} for x in SEGS * 40]   # "what" in every turn of a 1200-turn note
     d = make_note(root, "2026-10-09-100000-one", segs); chat.index_note(d, embed=fake_embed)
-    hits = chat.grep_leg(root, "What did Priya say about the budget", None)
-    assert hits and all(t % 2 == 0 for _, t in hits)                                 # "What" is everywhere: ignored; Priya's turns only
+    assert chat.grep_leg(root, "What did Priya say about the budget", None) == set()  # "What" is everywhere: ignored; a name is not a text hit
+    import time; t0 = time.time()
     r = chat.retrieve(root, "What did Priya say about the budget", embed=fake_embed, top_k=200)
-    assert chat.range_chars(root, r) <= chat.CONTEXT_CHARS and r
+    assert time.time() - t0 < 3, "retrieve must not re-read notes per candidate"
+    assert chat.range_chars(root, r) <= chat.RETRIEVE_CHARS and r
+    assert chat.note_json(root, r[0]["note"])["segments"][r[0]["first"]]["speaker"] == "SPEAKER_00" or any("SPEAKER_00" == chat.note_json(root, x["note"])["segments"][i]["speaker"] for x in r[:1] for i in range(x["first"], x["last"] + 1))
 
 
 def test_query_text_expands_followups():
@@ -101,6 +104,17 @@ def test_union_context_caps_from_front():
     big = [{"note": d.name, "first": i, "last": i, "score": 1} for i in range(1200)]  # far over CONTEXT_CHARS once rendered
     ctx2 = chat.union_context(ctx, big, root)
     assert chat.range_chars(root, ctx2) <= chat.CONTEXT_CHARS and (ctx2[0]["first"], ctx2[0]["last"]) != (0, 5)
+
+
+def test_followup_keeps_first_context():
+    import chat
+    root = Path(tempfile.mkdtemp()); d = make_note(root, "2026-10-09-100000-one", SEGS * 40)
+    first = [{"note": d.name, "first": 0, "last": 60, "score": 0.9}]
+    ctx = chat.union_context([], first, root)
+    assert chat.range_chars(root, first) <= chat.RETRIEVE_CHARS
+    ctx = chat.union_context(ctx, [{"note": d.name, "first": 600, "last": 660, "score": 0.9}], root)
+    assert ctx[0]["first"] == 0 and ctx[0]["last"] == 60, "the first question's turns must survive one follow-up"
+    assert chat.RETRIEVE_CHARS * 2 <= chat.CONTEXT_CHARS
 
 
 def test_render_validate_resolve():
