@@ -148,11 +148,7 @@ def retrieve(root, query, note=None, embed=embed, top_k=TOP_K):
 
 
 def range_chars(root, ranges):
-    total = 0
-    for r in ranges:
-        segs = (note_json(root, r["note"]) or {}).get("segments", [])
-        total += sum(len(turn_text(s)) + 30 for s in segs[r["first"]:r["last"] + 1])
-    return total
+    return sum(len(render_range(root, r["note"], "n1", r["first"], r["last"])) + 1 for r in ranges)
 
 
 def fits_whole(root, note):
@@ -168,3 +164,106 @@ def union_context(context, new, root):
     while ctx and range_chars(root, ctx) > CONTEXT_CHARS and ctx[0]["last"] > ctx[0]["first"]:
         ctx[0]["last"] -= max(1, (ctx[0]["last"] - ctx[0]["first"]) // 10)
     return ctx
+
+
+# ---------- prompt ----------
+ANSWER_SCHEMA = {"type": "object", "properties": {"answer": {"type": "string"},
+                 "sources": {"type": "array", "items": {"type": "object", "properties": {"ref": {"type": "string"}}, "required": ["ref"]}}},
+                 "required": ["answer", "sources"]}
+SYSTEM_PROMPT = ("You answer questions about recorded conversations. You are given transcript turns, each starting with a reference like [n1#42], "
+                 "under headers naming the recording, its date and its summary. Answer fully, in the language the question is asked in (Hinglish questions "
+                 "get Hinglish answers). Use only the turns given: never add facts from elsewhere, never guess. When you attribute a statement to a person, "
+                 "quote their words. Put the reference of every turn you rely on right after the sentence that uses it, like this: Priya said the draft will "
+                 "be ready by Monday [n1#42]. If the turns do not contain the answer, say so plainly and do not invent one. Return JSON with \"answer\" "
+                 "(markdown; paragraphs and bullet lists only) and \"sources\" (every reference you used, in order of first use).")
+REF = re.compile(r"\[(n\d+#\d+)\]")
+
+
+def aliases_for(session, note_ids):
+    al = session.setdefault("aliases", {})
+    for nid in note_ids:
+        if nid not in al.values():
+            al[f"n{len(al) + 1}"] = nid
+    return al
+
+
+def spk_name(t, key):
+    return (t.get("speakers") or {}).get(key) or pl.spk_label(key)
+
+
+def render_range(root, note_id, alias, first, last):
+    t = note_json(root, note_id) or {}
+    segs = t.get("segments", [])
+    return "\n".join(f"[{alias}#{i}] {pl.fmt_ts(segs[i]['start'])} {spk_name(t, segs[i]['speaker'])}: {turn_text(segs[i])}" for i in range(first, min(last, len(segs) - 1) + 1))
+
+
+def render_context(root, ranges, aliases):
+    by_alias = {v: k for k, v in aliases.items()}
+    parts, refs = [], set()
+    for alias, nid in aliases.items():
+        rs = [r for r in ranges if r["note"] == nid]
+        if not rs:
+            continue
+        t = note_json(root, nid) or {}
+        parts.append(f"## {alias}: {t.get('title', nid)} ({(t.get('created') or '')[:10]})\nSummary: {(t.get('summary') or '').strip()}")
+        for r in sorted(rs, key=lambda r: r["first"]):
+            block = render_range(root, nid, alias, r["first"], r["last"])
+            parts.append(block); refs |= set(REF.findall(block))
+    return "\n\n".join(parts), refs
+
+
+def notes_list(root):
+    rows = []
+    for d in sorted(root.iterdir(), reverse=True):
+        if d.is_dir() and NOTE_ID.match(d.name):
+            t = note_json(root, d.name)
+            if t and t.get("segments"):
+                rows.append(f"- {t.get('title', d.name)} ({(t.get('created') or '')[:10]}, {round((t.get('duration') or 0) / 60)} min)")
+    return "Recordings available:\n" + "\n".join(rows)
+
+
+def prompt_chars(messages):
+    return sum(len(m["content"]) for m in messages)
+
+
+def build_messages(session, question, context_text, listing):
+    limit = int(pl.NUM_CTX * pl.CHARS_PER_TOKEN * 0.85)
+    hist = [{"role": m["role"], "content": m.get("text", "")} for m in session.get("messages", []) if not m.get("pending") and m.get("text")]
+    while hist and sum(len(m["content"]) for m in hist) > HISTORY_CHARS:
+        hist.pop(0)
+    head = ((listing + "\n\n") if listing else "") + "Context:\n" + context_text
+    msgs = lambda h: [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": h}, *hist, {"role": "user", "content": question}]
+    while hist and prompt_chars(msgs(head)) > limit:
+        hist.pop(0)
+    if prompt_chars(msgs(head)) > limit:
+        head = head[:limit - prompt_chars(msgs(""))].rsplit("\n", 1)[0]
+    return msgs(head)
+
+
+def validate(answer, refs):
+    """Keep only refs that were in the context; renumber markers in the text to [k]; drop markers of unknown refs."""
+    kept = []
+    for s in answer.get("sources") or []:
+        r = s.get("ref") if isinstance(s, dict) else s
+        if r in refs and r not in kept:
+            kept.append(r)
+    text = str(answer.get("answer") or "")
+    for r in REF.findall(text):
+        if r in refs and r not in kept:
+            kept.append(r)
+    def sub(m):
+        r = m.group(1)
+        return f"[{kept.index(r) + 1}]" if r in kept else ""
+    text = re.sub(r" ?\[(n\d+#\d+)\]", lambda m: (" " + sub(m)) if sub(m) else "", text)
+    return re.sub(r"[ \t]+\n", "\n", text).strip(), kept
+
+
+def resolve(root, ref, aliases):
+    alias, _, turn = ref.partition("#")
+    nid = aliases.get(alias)
+    t = note_json(root, nid) if nid else None
+    if not t or not turn.isdigit() or int(turn) >= len(t.get("segments", [])):
+        return None
+    s = t["segments"][int(turn)]
+    return {"ref": ref, "note": nid, "title": t.get("title", nid), "created": t.get("created", ""), "turn": int(turn), "start": s["start"], "end": s["end"],
+            "speaker": spk_name(t, s["speaker"]), "hinglish": turn_text(s), "english": s.get("english") or ""}
